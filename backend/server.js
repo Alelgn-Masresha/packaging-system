@@ -40,12 +40,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // Serve static frontend from dist
-app.use(express.static(path.join(__dirname, '../dist')));
+//app.use(express.static(path.join(__dirname, '../dist')));
 
 // Catch-all: send index.html for any unknown frontend routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+//app.get('*', (req, res) => {
+//  res.sendFile(path.join(__dirname, '../dist/index.html'));
+//});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
