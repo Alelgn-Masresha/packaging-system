@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, User, X, Clock, AlertTriangle, Info, Loader2, Menu } from 'lucide-react';
-import { ordersAPI } from '../services/api';
+import { ordersAPI, rawMaterialsAPI } from '../services/api';
 
 interface Notification {
   id: string;
@@ -18,6 +18,15 @@ interface Order {
   product_name: string;
   delivery_date: string;
   status: string;
+}
+
+interface RawMaterial {
+  material_id: number;
+  material_name: string;
+  current_stock: number;
+  min_stock: number;
+  unit: string;
+  status: 'Available' | 'Low Stock' | 'Out of Stock';
 }
 
 interface HeaderProps {
@@ -39,8 +48,12 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const loadNotifications = async () => {
     try {
       setLoading(true);
-      const response = await ordersAPI.getAll();
-      const orders: Order[] = response.data;
+      const [ordersRes, lowStockRes] = await Promise.all([
+        ordersAPI.getAll(),
+        rawMaterialsAPI.getLowStock().catch(() => ({ data: [] }))
+      ]);
+      const orders: Order[] = ordersRes.data;
+      const lowStock: RawMaterial[] = lowStockRes.data || [];
       
       const today = new Date();
       const notificationsList: Notification[] = [];
@@ -114,7 +127,20 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
         }
       });
 
-      // Sort notifications by priority: missed > due today > 1 day > 2 days > 3 days
+      // Add low stock / out of stock notifications
+      lowStock.forEach((rm) => {
+        const isOut = rm.status === 'Out of Stock';
+        notificationsList.push({
+          id: `rm-${rm.material_id}`,
+          type: isOut ? 'error' : 'warning',
+          title: isOut ? 'Material Out of Stock' : 'Material Low Stock',
+          message: `${rm.material_name}: ${rm.current_stock} ${rm.unit} available · Min ${rm.min_stock} ${rm.unit}`,
+          time: 'Now',
+          read: false,
+        });
+      });
+
+      // Sort notifications by priority: missed/out of stock > due today/low stock > info
       notificationsList.sort((a, b) => {
         const priorityOrder = { 'error': 0, 'warning': 1, 'info': 2 };
         return priorityOrder[a.type] - priorityOrder[b.type];

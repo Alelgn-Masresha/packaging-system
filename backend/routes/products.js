@@ -78,7 +78,7 @@ router.get('/search/:query', async (req, res) => {
 // Create new product
 router.post('/', async (req, res) => {
   try {
-    const { name, standard_size, base_price } = req.body;
+    const { name, standard_size, base_price, raw_material_id, amount_per_unit } = req.body;
     
     // Validate required fields
     if (!name || !base_price) {
@@ -96,9 +96,28 @@ router.post('/', async (req, res) => {
       });
     }
     
+    // Validate raw_material_id if provided
+    if (raw_material_id) {
+      const materialCheck = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [raw_material_id]);
+      if (materialCheck.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid raw material selected'
+        });
+      }
+    }
+    
+    // Validate amount_per_unit when raw_material_id is provided
+    if (raw_material_id && (amount_per_unit === undefined || isNaN(parseFloat(amount_per_unit)) || parseFloat(amount_per_unit) <= 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'amount_per_unit must be a positive number when raw material is selected'
+      });
+    }
+    
     const result = await pool.query(
-      'INSERT INTO products (name, standard_size, base_price) VALUES ($1, $2, $3) RETURNING *',
-      [name, standard_size, parseFloat(base_price)]
+      'INSERT INTO products (name, standard_size, base_price, raw_material_id, amount_per_unit) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, standard_size, parseFloat(base_price), raw_material_id || null, amount_per_unit ? parseFloat(amount_per_unit) : null]
     );
     
     res.status(201).json({
@@ -120,7 +139,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, standard_size, base_price } = req.body;
+    const { name, standard_size, base_price, raw_material_id, amount_per_unit } = req.body;
     
     if (!name || !base_price) {
       return res.status(400).json({
@@ -136,9 +155,27 @@ router.put('/:id', async (req, res) => {
       });
     }
     
+    // Validate raw_material_id if provided
+    if (raw_material_id) {
+      const materialCheck = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [raw_material_id]);
+      if (materialCheck.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid raw material selected'
+        });
+      }
+    }
+    
+    if (raw_material_id && (amount_per_unit === undefined || isNaN(parseFloat(amount_per_unit)) || parseFloat(amount_per_unit) <= 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'amount_per_unit must be a positive number when raw material is selected'
+      });
+    }
+    
     const result = await pool.query(
-      'UPDATE products SET name = $1, standard_size = $2, base_price = $3 WHERE product_id = $4 RETURNING *',
-      [name, standard_size, parseFloat(base_price), id]
+      'UPDATE products SET name = $1, standard_size = $2, base_price = $3, raw_material_id = $4, amount_per_unit = $5 WHERE product_id = $6 RETURNING *',
+      [name, standard_size, parseFloat(base_price), raw_material_id || null, amount_per_unit ? parseFloat(amount_per_unit) : null, id]
     );
     
     if (result.rows.length === 0) {

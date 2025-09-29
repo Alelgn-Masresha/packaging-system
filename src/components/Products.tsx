@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, X, Loader2 } from 'lucide-react';
-import { productsAPI } from '../services/api';
+import { productsAPI, rawMaterialsAPI } from '../services/api';
 
 interface Product {
   product_id: number;
   name: string;
   standard_size: string;
-  base_price: string | number; // Can come as string from API or number
+  base_price: string | number;
+  raw_material_id?: number;
+  amount_per_unit?: number;
+}
+
+interface RawMaterial {
+  material_id: number;
+  material_name: string;
+  unit: string;
 }
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
+  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -19,6 +28,8 @@ const Products: React.FC = () => {
     name: '',
     standard_size: '',
     base_price: '',
+    raw_material_id: '',
+    amount_per_unit: '',
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -26,6 +37,7 @@ const Products: React.FC = () => {
   // Load products on component mount
   useEffect(() => {
     loadProducts();
+    loadRawMaterials();
   }, []);
 
   const loadProducts = async () => {
@@ -38,6 +50,15 @@ const Products: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to load products');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRawMaterials = async () => {
+    try {
+      const response = await rawMaterialsAPI.getAll();
+      setRawMaterials(response.data);
+    } catch (err) {
+      console.error('Failed to load raw materials:', err);
     }
   };
 
@@ -61,7 +82,7 @@ const Products: React.FC = () => {
 
   const handleAddProduct = () => {
     setEditingProduct(null);
-    setFormData({ name: '', standard_size: '', base_price: '' });
+    setFormData({ name: '', standard_size: '', base_price: '', raw_material_id: '', amount_per_unit: '' });
     setShowModal(true);
   };
 
@@ -71,6 +92,8 @@ const Products: React.FC = () => {
       name: product.name,
       standard_size: product.standard_size,
       base_price: Number(product.base_price).toString(),
+      raw_material_id: product.raw_material_id?.toString() || '',
+      amount_per_unit: product.amount_per_unit?.toString() || '',
     });
     setShowModal(true);
   };
@@ -97,6 +120,8 @@ const Products: React.FC = () => {
           name: formData.name,
           standard_size: formData.standard_size,
           base_price: parseFloat(formData.base_price),
+          raw_material_id: formData.raw_material_id ? parseInt(formData.raw_material_id) : null,
+          amount_per_unit: formData.amount_per_unit ? parseFloat(formData.amount_per_unit) : null,
         });
         setProducts(products.map(product => 
           product.product_id === editingProduct.product_id ? response.data : product
@@ -107,11 +132,13 @@ const Products: React.FC = () => {
           name: formData.name,
           standard_size: formData.standard_size,
           base_price: parseFloat(formData.base_price),
+          raw_material_id: formData.raw_material_id ? parseInt(formData.raw_material_id) : null,
+          amount_per_unit: formData.amount_per_unit ? parseFloat(formData.amount_per_unit) : null,
         });
         setProducts([response.data, ...products]);
       }
       setShowModal(false);
-      setFormData({ name: '', standard_size: '', base_price: '' });
+      setFormData({ name: '', standard_size: '', base_price: '', raw_material_id: '', amount_per_unit: '' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save product');
     } finally {
@@ -169,6 +196,12 @@ const Products: React.FC = () => {
                   Base Price
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Raw Material
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount / RM Unit
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -176,7 +209,7 @@ const Products: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center">
+                  <td colSpan={7} className="px-6 py-8 text-center">
                     <div className="flex items-center justify-center space-x-2">
                       <Loader2 className="w-5 h-5 animate-spin text-green-600" />
                       <span className="text-gray-600">Loading products...</span>
@@ -185,7 +218,7 @@ const Products: React.FC = () => {
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
@@ -203,6 +236,20 @@ const Products: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       ETB {Number(product.base_price).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {product.raw_material_id ? 
+                        rawMaterials.find(rm => rm.material_id === product.raw_material_id)?.material_name || 'Unknown' 
+                        : 'Not specified'
+                      }
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {product.amount_per_unit ? (
+                        <>
+                          {product.amount_per_unit} {product.raw_material_id ?
+                            (rawMaterials.find(rm => rm.material_id === product.raw_material_id)?.unit || '') : ''}
+                        </>
+                      ) : 'Not specified'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                       <button 
@@ -283,6 +330,45 @@ const Products: React.FC = () => {
                     className="w-full pl-12 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     required
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Raw Material
+                </label>
+                <select
+                  value={formData.raw_material_id}
+                  onChange={(e) => setFormData({ ...formData, raw_material_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">Select Raw Material (Optional)</option>
+                  {rawMaterials.map((material) => (
+                    <option key={material.material_id} value={material.material_id}>
+                      {material.material_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount of Raw Material per Product
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.000001"
+                    min="0.000001"
+                    value={formData.amount_per_unit}
+                    onChange={(e) => setFormData({ ...formData, amount_per_unit: e.target.value })}
+                    placeholder="Enter amount required"
+                    className="w-full pr-16 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required={!!formData.raw_material_id}
+                  />
+                  <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                    {formData.raw_material_id ? (rawMaterials.find(rm => rm.material_id === parseInt(formData.raw_material_id))?.unit || '') : ''}
+                  </span>
                 </div>
               </div>
 

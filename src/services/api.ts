@@ -1,5 +1,5 @@
 const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL;
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 
 
@@ -91,6 +91,19 @@ export const paymentsAPI: any = {
   create: (paymentData: any) => apiService.post('/payments', paymentData),
   update: (id: number, paymentData: any) => apiService.put(`/payments/${id}`, paymentData),
   delete: (id: number) => apiService.delete(`/payments/${id}`),
+};
+
+export const rawMaterialsAPI: any = {
+  getAll: () => apiService.get('/raw-materials'),
+  getById: (id: number) => apiService.get(`/raw-materials/${id}`),
+  search: (query: string) => apiService.get(`/raw-materials/search/${encodeURIComponent(query)}`),
+  getByCategory: (category: string) => apiService.get(`/raw-materials/category/${encodeURIComponent(category)}`),
+  getLowStock: () => apiService.get('/raw-materials/low-stock/all'),
+  getCategories: () => apiService.get('/raw-materials/categories/all'),
+  create: (materialData: any) => apiService.post('/raw-materials', materialData),
+  update: (id: number, materialData: any) => apiService.put(`/raw-materials/${id}`, materialData),
+  addStock: (id: number, quantity: number) => apiService.put(`/raw-materials/${id}/add-stock`, { quantity }),
+  delete: (id: number) => apiService.delete(`/raw-materials/${id}`),
 };
 
 export default apiService;

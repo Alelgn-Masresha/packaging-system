@@ -7,6 +7,7 @@ import TrackOrders from './components/TrackOrders';
 import CustomerHistory from './components/CustomerHistory';
 import Products from './components/Products';
 import Reports from './components/Reports';
+import InventoryManagement from './components/InventoryManagement';
 
 function App() {
   const [activeView, setActiveView] = useState('dashboard');
@@ -26,6 +27,8 @@ function App() {
         return <CustomerHistory onBackToDashboard={() => setActiveView('dashboard')} />;
       case 'products':
         return <Products />;
+      case 'inventory':
+        return <InventoryManagement />;
       case 'reports':
         return <Reports />;
       default:

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BarChart3, Users, Package, History, Tag, FileText } from 'lucide-react';
+import { BarChart3, Users, Package, History, Tag, FileText, Warehouse } from 'lucide-react';
 import stepLogo from '../public/step_logo.png';
 
 interface SidebarProps {
@@ -15,6 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onClose }) 
     { id: 'track', label: 'Track Orders', icon: Package },
     { id: 'history', label: 'Customer History', icon: History },
     { id: 'products', label: 'Products', icon: Tag },
+    { id: 'inventory', label: 'Inventory Management', icon: Warehouse },
     { id: 'reports', label: 'Reports', icon: FileText },
   ];
 

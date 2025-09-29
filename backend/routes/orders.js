@@ -2,6 +2,197 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 
+// Helper function to calculate raw material requirements for an order
+const calculateRawMaterialRequirements = async (productId, quantity, customAmountPerUnit = null) => {
+  try {
+    // Get product details with raw material information
+    const productResult = await pool.query(`
+      SELECT 
+        p.product_id,
+        p.name as product_name,
+        p.amount_per_unit,
+        rm.material_id,
+        rm.material_name,
+        rm.current_stock,
+        rm.unit
+      FROM products p
+      LEFT JOIN raw_materials rm ON p.raw_material_id = rm.material_id
+      WHERE p.product_id = $1
+    `, [productId]);
+
+    if (productResult.rows.length === 0) {
+      throw new Error('Product not found');
+    }
+
+    const product = productResult.rows[0];
+    
+    // If product doesn't use raw materials, return empty requirements
+    if (!product.material_id) {
+      return { requirements: [], totalRequired: 0 };
+    }
+
+    // Use custom amount_per_unit if provided, otherwise use product default
+    const amountPerUnit = customAmountPerUnit !== null ? parseFloat(customAmountPerUnit) : parseFloat(product.amount_per_unit);
+    
+    if (!amountPerUnit || amountPerUnit <= 0) {
+      return { requirements: [], totalRequired: 0 };
+    }
+
+    const totalRequired = amountPerUnit * parseInt(quantity);
+    
+    return {
+      requirements: [{
+        material_id: product.material_id,
+        material_name: product.material_name,
+        current_stock: parseFloat(product.current_stock),
+        unit: product.unit,
+        amount_per_unit: amountPerUnit,
+        total_required: totalRequired,
+        sufficient: parseFloat(product.current_stock) >= totalRequired
+      }],
+      totalRequired: totalRequired
+    };
+  } catch (err) {
+    console.error('Error calculating raw material requirements:', err);
+    throw err;
+  }
+};
+
+// Helper function to subtract raw materials from stock
+const subtractRawMaterials = async (requirements, orderId) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    for (const req of requirements) {
+      if (req.sufficient) {
+        // Get current stock before update
+        const currentResult = await client.query(
+          'SELECT current_stock FROM raw_materials WHERE material_id = $1',
+          [req.material_id]
+        );
+        
+        if (currentResult.rows.length > 0) {
+          const currentStock = parseFloat(currentResult.rows[0].current_stock);
+          const newStock = currentStock - req.total_required;
+          
+          // Update stock
+          await client.query(
+            'UPDATE raw_materials SET current_stock = $1 WHERE material_id = $2',
+            [newStock, req.material_id]
+          );
+          
+          // Log transaction
+          await client.query(`
+            INSERT INTO stock_transactions (
+              material_id, transaction_type, quantity, previous_stock, new_stock, 
+              reason, reference_type, reference_id, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `, [
+            req.material_id,
+            'SUBTRACT',
+            req.total_required,
+            currentStock,
+            newStock,
+            `Order #${orderId} - Material consumption`,
+            'ORDER',
+            orderId,
+            'SYSTEM'
+          ]);
+        }
+      }
+    }
+    
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// Helper function to restore raw materials when order is cancelled
+const restoreRawMaterials = async (orderId) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Get order details with product information
+    const orderResult = await client.query(`
+      SELECT 
+        o.order_id,
+        o.quantity,
+        o.amount_per_unit as order_amount_per_unit,
+        p.product_id,
+        p.amount_per_unit as product_amount_per_unit,
+        rm.material_id,
+        rm.material_name,
+        rm.current_stock,
+        rm.unit
+      FROM orders o
+      JOIN products p ON o.product_id = p.product_id
+      LEFT JOIN raw_materials rm ON p.raw_material_id = rm.material_id
+      WHERE o.order_id = $1
+    `, [orderId]);
+    
+    if (orderResult.rows.length === 0) {
+      throw new Error('Order not found');
+    }
+    
+    const order = orderResult.rows[0];
+    
+    // If product doesn't use raw materials, nothing to restore
+    if (!order.material_id) {
+      await client.query('COMMIT');
+      return;
+    }
+    
+    // Use order's custom amount_per_unit if available, otherwise use product default
+    const amountPerUnit = order.order_amount_per_unit || order.product_amount_per_unit;
+    
+    if (!amountPerUnit || amountPerUnit <= 0) {
+      await client.query('COMMIT');
+      return;
+    }
+    
+    const totalToRestore = parseFloat(amountPerUnit) * parseInt(order.quantity);
+    const currentStock = parseFloat(order.current_stock);
+    const newStock = currentStock + totalToRestore;
+    
+    // Update stock
+    await client.query(
+      'UPDATE raw_materials SET current_stock = $1 WHERE material_id = $2',
+      [newStock, order.material_id]
+    );
+    
+    // Log transaction
+    await client.query(`
+      INSERT INTO stock_transactions (
+        material_id, transaction_type, quantity, previous_stock, new_stock, 
+        reason, reference_type, reference_id, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      order.material_id,
+      'ADD',
+      totalToRestore,
+      currentStock,
+      newStock,
+      `Order #${orderId} - Material restoration (order cancelled)`,
+      'ORDER',
+      orderId,
+      'SYSTEM'
+    ]);
+    
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 // Get all orders with customer and product details
 router.get('/', async (req, res) => {
   try {
@@ -167,6 +358,7 @@ router.get('/status/:status', async (req, res) => {
 
 // Create new order
 router.post('/', async (req, res) => {
+  const client = await pool.connect();
   try {
     const {
       customer_id,
@@ -177,7 +369,8 @@ router.post('/', async (req, res) => {
       is_custom_size = false,
       length,
       width,
-      height
+      height,
+      amount_per_unit
     } = req.body;
     
     // Validate required fields
@@ -211,12 +404,42 @@ router.post('/', async (req, res) => {
         error: 'Length, width, and height are required for custom size orders'
       });
     }
+
+    // Validate amount_per_unit for custom size orders
+    if (is_custom_size && (!amount_per_unit || parseFloat(amount_per_unit) <= 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Amount per unit is required for custom size orders and must be greater than 0'
+      });
+    }
+
+    // Calculate raw material requirements
+    const materialRequirements = await calculateRawMaterialRequirements(product_id, quantity, amount_per_unit);
     
-    const result = await pool.query(
+    // Check if there are insufficient materials
+    const insufficientMaterials = materialRequirements.requirements.filter(req => !req.sufficient);
+    
+    if (insufficientMaterials.length > 0) {
+      const warningMessages = insufficientMaterials.map(req => 
+        `Insufficient ${req.material_name}: Need ${req.total_required} ${req.unit}, but only have ${req.current_stock} ${req.unit}`
+      );
+      
+      return res.status(400).json({
+        success: false,
+        error: 'You don\'t have enough materials',
+        details: warningMessages,
+        insufficient_materials: insufficientMaterials
+      });
+    }
+
+    await client.query('BEGIN');
+    
+    // Create the order
+    const result = await client.query(
       `INSERT INTO orders (
         customer_id, product_id, delivery_date, quantity, order_unit_price,
-        is_custom_size, length, width, height
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        is_custom_size, length, width, height, amount_per_unit
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [
         customer_id,
         product_id,
@@ -226,20 +449,65 @@ router.post('/', async (req, res) => {
         is_custom_size,
         is_custom_size ? parseFloat(length) : null,
         is_custom_size ? parseFloat(width) : null,
-        is_custom_size ? parseFloat(height) : null
+        is_custom_size ? parseFloat(height) : null,
+        amount_per_unit ? parseFloat(amount_per_unit) : null
       ]
     );
+
+    // Subtract raw materials from stock
+    if (materialRequirements.requirements.length > 0) {
+      await subtractRawMaterials(materialRequirements.requirements, result.rows[0].order_id);
+    }
+
+    await client.query('COMMIT');
     
     res.status(201).json({
       success: true,
       data: result.rows[0],
-      message: 'Order created successfully'
+      message: 'Order created successfully',
+      material_requirements: materialRequirements.requirements
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Error creating order:', err);
     res.status(500).json({
       success: false,
       error: 'Failed to create order',
+      message: err.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Check raw material requirements for an order (before creating)
+router.post('/check-materials', async (req, res) => {
+  try {
+    const { product_id, quantity, amount_per_unit } = req.body;
+    
+    if (!product_id || !quantity) {
+      return res.status(400).json({
+        success: false,
+        error: 'Product ID and quantity are required'
+      });
+    }
+    
+    const materialRequirements = await calculateRawMaterialRequirements(product_id, quantity, amount_per_unit);
+    const insufficientMaterials = materialRequirements.requirements.filter(req => !req.sufficient);
+    
+    res.json({
+      success: true,
+      data: {
+        requirements: materialRequirements.requirements,
+        insufficient_materials: insufficientMaterials,
+        has_insufficient: insufficientMaterials.length > 0
+      }
+    });
+  } catch (err) {
+    console.error('Error checking materials:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check materials',
       message: err.message
     });
   }
@@ -247,6 +515,7 @@ router.post('/', async (req, res) => {
 
 // Update order status
 router.put('/:id/status', async (req, res) => {
+  const client = await pool.connect();
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -260,17 +529,42 @@ router.put('/:id/status', async (req, res) => {
       });
     }
     
-    const result = await pool.query(
-      'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
-      [status, id]
+    await client.query('BEGIN');
+    
+    // Get current order status before update
+    const currentOrderResult = await client.query(
+      'SELECT status FROM orders WHERE order_id = $1',
+      [id]
     );
     
-    if (result.rows.length === 0) {
+    if (currentOrderResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({
         success: false,
         error: 'Order not found'
       });
     }
+    
+    const currentStatus = currentOrderResult.rows[0].status;
+    
+    // Update order status
+    const result = await client.query(
+      'UPDATE orders SET status = $1 WHERE order_id = $2 RETURNING *',
+      [status, id]
+    );
+    
+    // If order is being cancelled, restore raw materials
+    if (status === 'Cancelled' && currentStatus !== 'Cancelled') {
+      try {
+        await restoreRawMaterials(id);
+      } catch (restoreErr) {
+        console.error('Error restoring materials for cancelled order:', restoreErr);
+        // Continue with status update even if material restoration fails
+        // This prevents the entire operation from failing
+      }
+    }
+    
+    await client.query('COMMIT');
     
     res.json({
       success: true,
@@ -278,12 +572,15 @@ router.put('/:id/status', async (req, res) => {
       message: 'Order status updated successfully'
     });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Error updating order status:', err);
     res.status(500).json({
       success: false,
       error: 'Failed to update order status',
       message: err.message
     });
+  } finally {
+    client.release();
   }
 });
 

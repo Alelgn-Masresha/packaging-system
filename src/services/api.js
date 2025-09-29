@@ -53,6 +53,14 @@ class ApiService {
     });
   }
 
+  // PATCH request
+  async patch(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // DELETE request
   async delete(endpoint) {
     return this.request(endpoint, { method: 'DELETE' });
@@ -132,6 +140,9 @@ export const ordersAPI = {
 
   // Delete order
   delete: (id) => apiService.delete(`/orders/${id}`),
+
+  // Check raw material requirements
+  checkMaterials: (productId, quantity) => apiService.post('/orders/check-materials', { product_id: productId, quantity }),
 };
 
 export const paymentsAPI = {
@@ -158,6 +169,54 @@ export const paymentsAPI = {
 
   // Delete payment
   delete: (id) => apiService.delete(`/payments/${id}`),
+};
+
+// Raw Materials API
+export const rawMaterialsAPI = {
+  // Get all raw materials
+  getAll: () => apiService.get('/raw-materials'),
+
+  // Get raw material by ID
+  getById: (id) => apiService.get(`/raw-materials/${id}`),
+
+  // Search raw materials by name or category
+  search: (query) => apiService.get(`/raw-materials/search/${encodeURIComponent(query)}`),
+
+  // Get by category
+  getByCategory: (category) => apiService.get(`/raw-materials/category/${encodeURIComponent(category)}`),
+
+  // Get low stock items
+  getLowStock: () => apiService.get('/raw-materials/low-stock/all'),
+
+  // Get distinct categories
+  getCategories: () => apiService.get('/raw-materials/categories/all'),
+
+  // Create raw material
+  create: (materialData) => apiService.post('/raw-materials', materialData),
+
+  // Update raw material
+  update: (id, materialData) => apiService.put(`/raw-materials/${id}`, materialData),
+
+  // Add stock to a material
+  addStock: (id, quantity, reason = undefined, created_by = undefined) => apiService.patch(`/raw-materials/${id}/add-stock`, { quantity, reason, created_by }),
+
+  // Delete raw material
+  delete: (id) => apiService.delete(`/raw-materials/${id}`),
+
+  // Get stock transaction history for a specific material
+  getTransactions: (id, page = 1, limit = 50, type = null) => {
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (type) params.append('type', type);
+    return apiService.get(`/raw-materials/${id}/transactions?${params.toString()}`);
+  },
+
+  // Get all stock transactions
+  getAllTransactions: (page = 1, limit = 50, type = null, materialId = null) => {
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (type) params.append('type', type);
+    if (materialId) params.append('material_id', materialId);
+    return apiService.get(`/raw-materials/transactions/all?${params.toString()}`);
+  },
 };
 
 export default apiService;

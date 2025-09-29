@@ -16,6 +16,16 @@ interface Product {
   base_price: string | number; // Can come as string from API or number
 }
 
+interface MaterialRequirement {
+  material_id: number;
+  material_name: string;
+  current_stock: number;
+  unit: string;
+  amount_per_unit: number;
+  total_required: number;
+  sufficient: boolean;
+}
+
 const CustomersOrders: React.FC = () => {
   const [showNewOrder, setShowNewOrder] = useState(false);
   const [sizeType, setSizeType] = useState('standard');
@@ -42,6 +52,7 @@ const CustomersOrders: React.FC = () => {
     length: '',
     width: '',
     height: '',
+    amountPerUnit: '',
     deliveryDate: '',
     paymentAmount: '',
     referenceNumber: '',
@@ -189,6 +200,21 @@ const CustomersOrders: React.FC = () => {
       setSubmitting(true);
       setError(null);
 
+      // Check raw material requirements first
+      const materialCheck = await ordersAPI.checkMaterials(
+        parseInt(orderForm.product),
+        parseInt(orderForm.quantity),
+        sizeType === 'custom' ? orderForm.amountPerUnit : undefined
+      );
+
+      if (materialCheck.data.has_insufficient) {
+        const warningMessages = materialCheck.data.insufficient_materials.map((req: MaterialRequirement) => 
+          `Insufficient ${req.material_name}: Need ${req.total_required} ${req.unit}, but only have ${req.current_stock} ${req.unit}`
+        );
+        setError(`You don't have enough materials:\n${warningMessages.join('\n')}`);
+        return;
+      }
+
       // Create order
       const orderResponse = await ordersAPI.create({
         customer_id: currentCustomer.customer_id,
@@ -200,6 +226,7 @@ const CustomersOrders: React.FC = () => {
         length: sizeType === 'custom' ? parseFloat(orderForm.length) : undefined,
         width: sizeType === 'custom' ? parseFloat(orderForm.width) : undefined,
         height: sizeType === 'custom' ? parseFloat(orderForm.height) : undefined,
+        amount_per_unit: sizeType === 'custom' ? orderForm.amountPerUnit : undefined,
       });
 
       // Create payment if payment amount is provided
@@ -222,6 +249,7 @@ const CustomersOrders: React.FC = () => {
         length: '',
         width: '',
         height: '',
+        amountPerUnit: '',
         deliveryDate: '',
         paymentAmount: '',
         referenceNumber: '',
@@ -245,7 +273,7 @@ const CustomersOrders: React.FC = () => {
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-              <p className="text-red-800">{error}</p>
+              <p className="text-red-800 whitespace-pre-line">{error}</p>
             </div>
           )}
 
@@ -408,35 +436,60 @@ const CustomersOrders: React.FC = () => {
             </div>
 
             {sizeType === 'custom' && (
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-2">Length:</label>
-                  <input
-                    type="text"
-                    value={orderForm.length}
-                    onChange={(e) => handleOrderFormChange('length', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Length:</label>
+                    <input
+                      type="text"
+                      value={orderForm.length}
+                      onChange={(e) => handleOrderFormChange('length', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Width:</label>
+                    <input
+                      type="text"
+                      value={orderForm.width}
+                      onChange={(e) => handleOrderFormChange('width', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">Height:</label>
+                    <input
+                      type="text"
+                      value={orderForm.height}
+                      onChange={(e) => handleOrderFormChange('height', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
                 </div>
+                
                 <div>
-                  <label className="block text-sm text-gray-600 mb-2">Width:</label>
-                  <input
-                    type="text"
-                    value={orderForm.width}
-                    onChange={(e) => handleOrderFormChange('width', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Amount per Unit (Raw Material)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={orderForm.amountPerUnit}
+                      onChange={(e) => handleOrderFormChange('amountPerUnit', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter amount of raw material per unit"
+                      required
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <span className="text-gray-500 text-sm">units</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Specify how much raw material is needed per unit for this custom size
+                  </p>
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-2">Height:</label>
-                  <input
-                    type="text"
-                    value={orderForm.height}
-                    onChange={(e) => handleOrderFormChange('height', e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
+              </>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

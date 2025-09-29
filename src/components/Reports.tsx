@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, FileText, Download, Printer, Loader2 } from 'lucide-react';
+import { Calendar, FileText, Download, Printer, Loader2, BarChart3, List } from 'lucide-react';
 import { ordersAPI, productsAPI, paymentsAPI } from '../services/api';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 
 interface ReportData {
   date: string;
@@ -24,6 +25,7 @@ interface SalesSummary {
 interface Order {
   order_id: number;
   customer_id: number;
+  customer_name: string;
   product_id: number;
   product_name: string;
   quantity: number;
@@ -52,6 +54,9 @@ const Reports: React.FC = () => {
   const [productType, setProductType] = useState('All');
   const [quickFilter, setQuickFilter] = useState('Monthly');
   
+  // Section tabs
+  const [activeSection, setActiveSection] = useState<'summary' | 'individual'>('summary');
+  
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [salesSummary, setSalesSummary] = useState<SalesSummary>({
     totalOrders: 0,
@@ -66,6 +71,12 @@ const Reports: React.FC = () => {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Chart data states
+  const [salesTrendData, setSalesTrendData] = useState<any[]>([]);
+  const [orderVolumeData, setOrderVolumeData] = useState<any[]>([]);
+  const [productSalesData, setProductSalesData] = useState<any[]>([]);
+  const [statusDistributionData, setStatusDistributionData] = useState<any[]>([]);
 
   useEffect(() => {
     loadProducts();
@@ -131,7 +142,7 @@ const Reports: React.FC = () => {
       let totalPaid = 0;
       
       for (const order of productFilteredOrders) {
-        const orderTotal = parseFloat(order.order_unit_price) * order.quantity;
+        const orderTotal = parseFloat(String(order.order_unit_price)) * order.quantity;
         totalSales += orderTotal;
         
         try {
@@ -147,6 +158,9 @@ const Reports: React.FC = () => {
       summary.outstanding = totalSales - totalPaid;
       setSalesSummary(summary);
 
+      // Process data for charts
+      processChartData(productFilteredOrders);
+
       // Generate report data grouped by date and product
       const reportMap = new Map<string, ReportData>();
       
@@ -158,7 +172,7 @@ const Reports: React.FC = () => {
           const existing = reportMap.get(key)!;
           existing.orders += 1;
           existing.quantity += order.quantity;
-          existing.sales += parseFloat(order.order_unit_price) * order.quantity;
+          existing.sales += parseFloat(String(order.order_unit_price)) * order.quantity;
           
           // Add payment amount
           try {
@@ -181,7 +195,7 @@ const Reports: React.FC = () => {
             productType: order.product_name,
             orders: 1,
             quantity: order.quantity,
-            sales: parseFloat(order.order_unit_price) * order.quantity,
+            sales: parseFloat(String(order.order_unit_price)) * order.quantity,
             paid: paidAmount,
           });
         }
@@ -205,6 +219,75 @@ const Reports: React.FC = () => {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount).replace('ETB', 'Birr');
+  };
+
+  // Process data for charts
+  const processChartData = (orders: Order[]) => {
+    // Sales trend data (daily sales)
+    const salesTrendMap = new Map<string, { date: string; sales: number; orders: number }>();
+    
+    orders.forEach(order => {
+      const date = order.order_date;
+      const sales = parseFloat(String(order.order_unit_price)) * order.quantity;
+      
+      if (salesTrendMap.has(date)) {
+        const existing = salesTrendMap.get(date)!;
+        existing.sales += sales;
+        existing.orders += 1;
+      } else {
+        salesTrendMap.set(date, { date, sales, orders: 1 });
+      }
+    });
+    
+    const salesTrend = Array.from(salesTrendMap.values())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map(item => ({
+        ...item,
+        date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      }));
+    
+    setSalesTrendData(salesTrend);
+    
+    // Order volume data (daily order counts)
+    const orderVolume = salesTrend.map(item => ({
+      date: item.date,
+      orders: item.orders
+    }));
+    setOrderVolumeData(orderVolume);
+    
+    // Product sales data
+    const productSalesMap = new Map<string, { product: string; sales: number; orders: number }>();
+    
+    orders.forEach(order => {
+      const product = order.product_name;
+      const sales = parseFloat(String(order.order_unit_price)) * order.quantity;
+      
+      if (productSalesMap.has(product)) {
+        const existing = productSalesMap.get(product)!;
+        existing.sales += sales;
+        existing.orders += 1;
+      } else {
+        productSalesMap.set(product, { product, sales, orders: 1 });
+      }
+    });
+    
+    const productSales = Array.from(productSalesMap.values())
+      .sort((a, b) => b.sales - a.sales)
+      .slice(0, 5); // Top 5 products
+    setProductSalesData(productSales);
+    
+    // Status distribution data
+    const statusMap = new Map<string, number>();
+    orders.forEach(order => {
+      statusMap.set(order.status, (statusMap.get(order.status) || 0) + 1);
+    });
+    
+    const statusDistribution = Array.from(statusMap.entries()).map(([status, count]) => ({
+      status,
+      count,
+      percentage: Math.round((count / orders.length) * 100)
+    }));
+    setStatusDistributionData(statusDistribution);
   };
 
   const handleExportPDF = () => {
@@ -262,35 +345,80 @@ const Reports: React.FC = () => {
 
   // Helper function to check if an order is discounted
   const isOrderDiscounted = (order: Order): boolean => {
-    const orderUnitPrice = parseFloat(order.order_unit_price);
-    const currentBasePrice = parseFloat(order.base_price);
+    const orderUnitPrice = parseFloat(String(order.order_unit_price));
+    const currentBasePrice = parseFloat(String(order.base_price));
     return orderUnitPrice < currentBasePrice;
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reports & Sales Analytics</h1>
-        <p className="text-gray-600 mt-1">Real-time sales data and analytics from your database</p>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">{error}</p>
-        </div>
-      )}
-
-      {/* Filters Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-          {loading && (
-            <div className="flex items-center space-x-2 text-gray-600">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading data...</span>
+    <div className="flex h-full bg-white">
+      {/* Main Reports Panel */}
+      <div className="flex-1 p-6">
+        {/* Header */}
+        <div className="bg-blue-600 rounded-lg p-6 mb-6 relative">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div>
+                <h1 className="text-2xl font-bold text-white">Reports & Sales Analytics</h1>
+                <div className="flex items-center space-x-2 mt-1">
+                  <Calendar className="w-4 h-4 text-blue-100" />
+                  <span className="text-blue-100 text-sm">
+                    Real-time sales data and analytics from your database
+                  </span>
+                </div>
+              </div>
             </div>
-          )}
+            <div className="flex items-center space-x-4">
+              <BarChart3 className="w-6 h-6 text-blue-100" />
+            </div>
+          </div>
         </div>
+
+        {/* Section Tabs */}
+        <div className="mb-4 border-b border-gray-200">
+          <nav className="flex space-x-6">
+            <button
+              onClick={() => setActiveSection('summary')}
+              className={`pb-2 text-sm font-medium flex items-center space-x-2 ${
+                activeSection === 'summary'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Summary Reports</span>
+            </button>
+            <button
+              onClick={() => setActiveSection('individual')}
+              className={`pb-2 text-sm font-medium flex items-center space-x-2 ${
+                activeSection === 'individual'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              <span>Individual Reports</span>
+            </button>
+          </nav>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <p className="text-red-800">{error}</p>
+          </div>
+        )}
+
+        {/* Filters Section */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+            {loading && (
+              <div className="flex items-center space-x-2 text-gray-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading data...</span>
+              </div>
+            )}
+          </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
             <label className="text-sm font-medium text-gray-700">Date Range:</label>
@@ -382,240 +510,348 @@ const Reports: React.FC = () => {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Sales Summary Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-6">Sales Summary</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-900">{salesSummary.totalOrders}</div>
-            <div className="text-sm text-green-600">Total Orders</div>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-blue-900">{salesSummary.completedOrders}</div>
-            <div className="text-sm text-blue-600">Completed Orders</div>
-          </div>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-yellow-900">{salesSummary.pendingOrders}</div>
-            <div className="text-sm text-yellow-600">Pending Orders</div>
-          </div>
-          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-purple-900">{salesSummary.totalQuantity.toLocaleString()}</div>
-            <div className="text-sm text-purple-600">Total Quantity</div>
-          </div>
-          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-indigo-900">{formatCurrency(salesSummary.totalSales)}</div>
-            <div className="text-sm text-indigo-600">Total Sales</div>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-900">{formatCurrency(salesSummary.totalPaid)}</div>
-            <div className="text-sm text-green-600">Total Paid</div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-red-900">{formatCurrency(salesSummary.outstanding)}</div>
-            <div className="text-sm text-red-600">Outstanding</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Report Breakdown Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Report Breakdown</h2>
-          <div className="flex space-x-2">
-            <button
-              onClick={handleExportPDF}
-              className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Export PDF</span>
-            </button>
-            <button
-              onClick={handleExportExcel}
-              className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export Excel</span>
-            </button>
-            <button
-              onClick={handlePrint}
-              className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Print</span>
-            </button>
-          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Orders
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Quantity
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Sales
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Paid
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center">
-                    <div className="flex items-center justify-center space-x-2">
-                      <Loader2 className="w-5 h-5 animate-spin text-green-600" />
-                      <span className="text-gray-600">Loading report data...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : reportData.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                    No data found for the selected filters
-                  </td>
-                </tr>
-              ) : (
-                reportData.map((row, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(row.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {row.productType}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {row.orders}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {row.quantity.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {formatCurrency(row.sales)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {formatCurrency(row.paid)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        {activeSection === 'summary' && (
+          <>
+            {/* Sales Summary Section */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Sales Summary</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-900">{salesSummary.totalOrders}</div>
+                  <div className="text-sm text-green-600">Total Orders</div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-900">{salesSummary.completedOrders}</div>
+                  <div className="text-sm text-blue-600">Completed Orders</div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-yellow-900">{salesSummary.pendingOrders}</div>
+                  <div className="text-sm text-yellow-600">Pending Orders</div>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-purple-900">{salesSummary.totalQuantity.toLocaleString()}</div>
+                  <div className="text-sm text-purple-600">Total Quantity</div>
+                </div>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-indigo-900">{formatCurrency(salesSummary.totalSales)}</div>
+                  <div className="text-sm text-indigo-600">Total Sales</div>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-900">{formatCurrency(salesSummary.totalPaid)}</div>
+                  <div className="text-sm text-green-600">Total Paid</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-red-900">{formatCurrency(salesSummary.outstanding)}</div>
+                  <div className="text-sm text-red-600">Outstanding</div>
+                </div>
+              </div>
+            </div>
 
-      {/* Individual Orders Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Individual Orders</h2>
-          <p className="text-sm text-gray-600 mt-1">Detailed view of all orders with pricing information</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Order ID
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Customer
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Quantity
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Order Price
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Current Price
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
-                    No orders found for the selected filters
-                  </td>
-                </tr>
-              ) : (
-                filteredOrders.map((order) => (
-                  <tr key={order.order_id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      #{order.order_id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.customer_name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      <div className="flex items-center space-x-2">
-                        <span>{order.product_name}</span>
-                        {isOrderDiscounted(order) && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            Discounted
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.quantity}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      ETB {parseFloat(order.order_unit_price).toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      ETB {parseFloat(order.base_price).toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ETB {(parseFloat(order.order_unit_price) * order.quantity).toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        order.status === 'Completed' || order.status === 'Delivered' 
-                          ? 'bg-green-100 text-green-800'
-                          : order.status === 'In Progress'
-                          ? 'bg-blue-100 text-blue-800'
-                          : order.status === 'Pending'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {new Date(order.order_date).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+            {/* Sales Trend Chart */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Sales Trend</h2>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={salesTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: any, name: string) => [
+                        name === 'sales' ? formatCurrency(value) : value,
+                        name === 'sales' ? 'Sales' : 'Orders'
+                      ]}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="sales" 
+                      stroke="#3B82F6" 
+                      fill="#3B82F6" 
+                      fillOpacity={0.3}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Product Sales Chart */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-6">Top Products by Sales</h2>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={productSalesData} layout="horizontal">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" />
+                      <YAxis dataKey="product" type="category" width={100} />
+                      <Tooltip 
+                        formatter={(value: any) => [formatCurrency(value), 'Sales']}
+                      />
+                      <Bar dataKey="sales" fill="#10B981" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-6">Order Status Distribution</h2>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusDistributionData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ status, percentage }) => `${status} (${percentage}%)`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="count"
+                      >
+                        {statusDistributionData.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={['#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#8B5CF6'][index % 5]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Report Breakdown Section */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="flex justify-between items-center p-6 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Report Breakdown</h2>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleExportPDF}
+                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Export PDF</span>
+                  </button>
+                  <button
+                    onClick={handleExportExcel}
+                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Export Excel</span>
+                  </button>
+                  <button
+                    onClick={handlePrint}
+                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Product Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Orders
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Quantity
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Sales
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Paid
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center">
+                          <div className="flex items-center justify-center space-x-2">
+                            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                            <span className="text-gray-600">Loading report data...</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : reportData.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                          No data found for the selected filters
+                        </td>
+                      </tr>
+                    ) : (
+                      reportData.map((row, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(row.date).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {row.productType}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {row.orders}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {row.quantity.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {formatCurrency(row.sales)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {formatCurrency(row.paid)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeSection === 'individual' && (
+          <>
+            {/* Order Volume Chart */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Order Volume Trend</h2>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={orderVolumeData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: any) => [value, 'Orders']}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="orders" 
+                      stroke="#10B981" 
+                      strokeWidth={3}
+                      dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Individual Orders Section */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-6 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">Individual Orders</h2>
+                <p className="text-sm text-gray-600 mt-1">Detailed view of all orders with pricing information</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Order ID
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Customer
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Product
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Quantity
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Order Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Current Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                          No orders found for the selected filters
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOrders.map((order) => (
+                        <tr key={order.order_id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            #{order.order_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {order.customer_name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            <div className="flex items-center space-x-2">
+                              <span>{order.product_name}</span>
+                              {isOrderDiscounted(order) && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  Discounted
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {order.quantity}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            ETB {parseFloat(String(order.order_unit_price)).toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            ETB {parseFloat(String(order.base_price)).toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            ETB {(parseFloat(String(order.order_unit_price)) * order.quantity).toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              order.status === 'Completed' || order.status === 'Delivered' 
+                                ? 'bg-green-100 text-green-800'
+                                : order.status === 'In Progress'
+                                ? 'bg-blue-100 text-blue-800'
+                                : order.status === 'Pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {order.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            {new Date(order.order_date).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

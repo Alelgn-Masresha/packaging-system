@@ -12,6 +12,7 @@ const customerRoutes = require('./routes/customers');
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');
 const paymentRoutes = require('./routes/payments');
+const rawMaterialsRoutes = require('./routes/raw-materials');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,7 +20,7 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors({
   origin: ["http://localhost:5173", "https://packaging-system.vercel.app"],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
 }));
 app.use(bodyParser.json());
@@ -33,6 +34,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/raw-materials', rawMaterialsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
