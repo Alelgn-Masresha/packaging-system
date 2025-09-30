@@ -3,55 +3,42 @@ const router = express.Router();
 const { pool } = require('../config/database');
 
 // Helper function to calculate raw material requirements for an order
+// Uses product_materials join table (supports multiple materials per product)
 const calculateRawMaterialRequirements = async (productId, quantity, customAmountPerUnit = null) => {
   try {
-    // Get product details with raw material information
-    const productResult = await pool.query(`
-      SELECT 
-        p.product_id,
-        p.name as product_name,
-        p.amount_per_unit,
-        rm.material_id,
-        rm.material_name,
-        rm.current_stock,
-        rm.unit
-      FROM products p
-      LEFT JOIN raw_materials rm ON p.raw_material_id = rm.material_id
-      WHERE p.product_id = $1
+    // Get all materials for the product
+    const materialsRes = await pool.query(`
+      SELECT pm.material_id, pm.amount_per_unit, rm.material_name, rm.current_stock, rm.unit
+      FROM product_materials pm
+      JOIN raw_materials rm ON rm.material_id = pm.material_id
+      WHERE pm.product_id = $1
     `, [productId]);
 
-    if (productResult.rows.length === 0) {
-      throw new Error('Product not found');
-    }
-
-    const product = productResult.rows[0];
-    
-    // If product doesn't use raw materials, return empty requirements
-    if (!product.material_id) {
+    if (materialsRes.rows.length === 0) {
+      // Product has no material requirements
       return { requirements: [], totalRequired: 0 };
     }
 
-    // Use custom amount_per_unit if provided, otherwise use product default
-    const amountPerUnit = customAmountPerUnit !== null ? parseFloat(customAmountPerUnit) : parseFloat(product.amount_per_unit);
-    
-    if (!amountPerUnit || amountPerUnit <= 0) {
-      return { requirements: [], totalRequired: 0 };
-    }
+    const requirements = materialsRes.rows.map(row => {
+      // If a custom amount is provided and only one material exists, apply it; otherwise use stored amount
+      const perUnit = (customAmountPerUnit !== null && materialsRes.rows.length === 1)
+        ? parseFloat(customAmountPerUnit)
+        : parseFloat(row.amount_per_unit);
+      const totalReq = perUnit * parseInt(quantity);
+      const current = parseFloat(row.current_stock);
+      return {
+        material_id: row.material_id,
+        material_name: row.material_name,
+        current_stock: current,
+        unit: row.unit,
+        amount_per_unit: perUnit,
+        total_required: totalReq,
+        sufficient: current >= totalReq
+      };
+    });
 
-    const totalRequired = amountPerUnit * parseInt(quantity);
-    
-    return {
-      requirements: [{
-        material_id: product.material_id,
-        material_name: product.material_name,
-        current_stock: parseFloat(product.current_stock),
-        unit: product.unit,
-        amount_per_unit: amountPerUnit,
-        total_required: totalRequired,
-        sufficient: parseFloat(product.current_stock) >= totalRequired
-      }],
-      totalRequired: totalRequired
-    };
+    const totalRequired = requirements.reduce((sum, r) => sum + r.total_required, 0);
+    return { requirements, totalRequired };
   } catch (err) {
     console.error('Error calculating raw material requirements:', err);
     throw err;
@@ -118,21 +105,10 @@ const restoreRawMaterials = async (orderId) => {
   try {
     await client.query('BEGIN');
     
-    // Get order details with product information
+    // Get order with product id and quantity
     const orderResult = await client.query(`
-      SELECT 
-        o.order_id,
-        o.quantity,
-        o.amount_per_unit as order_amount_per_unit,
-        p.product_id,
-        p.amount_per_unit as product_amount_per_unit,
-        rm.material_id,
-        rm.material_name,
-        rm.current_stock,
-        rm.unit
+      SELECT o.order_id, o.product_id, o.quantity
       FROM orders o
-      JOIN products p ON o.product_id = p.product_id
-      LEFT JOIN raw_materials rm ON p.raw_material_id = rm.material_id
       WHERE o.order_id = $1
     `, [orderId]);
     
@@ -142,47 +118,39 @@ const restoreRawMaterials = async (orderId) => {
     
     const order = orderResult.rows[0];
     
-    // If product doesn't use raw materials, nothing to restore
-    if (!order.material_id) {
-      await client.query('COMMIT');
-      return;
+    // Get the materials for the product
+    const materialsRes = await client.query(`
+      SELECT pm.material_id, pm.amount_per_unit, rm.current_stock, rm.unit
+      FROM product_materials pm
+      JOIN raw_materials rm ON rm.material_id = pm.material_id
+      WHERE pm.product_id = $1
+    `, [order.product_id]);
+
+    for (const row of materialsRes.rows) {
+      const perUnit = parseFloat(row.amount_per_unit);
+      if (!perUnit || perUnit <= 0) continue;
+      const totalToRestore = perUnit * parseInt(order.quantity);
+      const currentStock = parseFloat(row.current_stock);
+      const newStock = currentStock + totalToRestore;
+
+      await client.query('UPDATE raw_materials SET current_stock = $1 WHERE material_id = $2', [newStock, row.material_id]);
+      await client.query(`
+        INSERT INTO stock_transactions (
+          material_id, transaction_type, quantity, previous_stock, new_stock, 
+          reason, reference_type, reference_id, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        row.material_id,
+        'ADD',
+        totalToRestore,
+        currentStock,
+        newStock,
+        `Order #${orderId} - Material restoration (order cancelled)`,
+        'ORDER',
+        orderId,
+        'SYSTEM'
+      ]);
     }
-    
-    // Use order's custom amount_per_unit if available, otherwise use product default
-    const amountPerUnit = order.order_amount_per_unit || order.product_amount_per_unit;
-    
-    if (!amountPerUnit || amountPerUnit <= 0) {
-      await client.query('COMMIT');
-      return;
-    }
-    
-    const totalToRestore = parseFloat(amountPerUnit) * parseInt(order.quantity);
-    const currentStock = parseFloat(order.current_stock);
-    const newStock = currentStock + totalToRestore;
-    
-    // Update stock
-    await client.query(
-      'UPDATE raw_materials SET current_stock = $1 WHERE material_id = $2',
-      [newStock, order.material_id]
-    );
-    
-    // Log transaction
-    await client.query(`
-      INSERT INTO stock_transactions (
-        material_id, transaction_type, quantity, previous_stock, new_stock, 
-        reason, reference_type, reference_id, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      order.material_id,
-      'ADD',
-      totalToRestore,
-      currentStock,
-      newStock,
-      `Order #${orderId} - Material restoration (order cancelled)`,
-      'ORDER',
-      orderId,
-      'SYSTEM'
-    ]);
     
     await client.query('COMMIT');
   } catch (err) {

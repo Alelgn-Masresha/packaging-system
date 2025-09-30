@@ -2,15 +2,31 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 
-// Get all products
+// Get all products (with materials)
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM products ORDER BY product_id DESC');
-    res.json({
-      success: true,
-      data: result.rows,
-      count: result.rows.length
-    });
+    const products = result.rows;
+
+    // fetch materials for all products in one query
+    const ids = products.map(p => p.product_id);
+    let materialsMap = new Map();
+    if (ids.length > 0) {
+      const pmRes = await pool.query(
+        'SELECT pm.product_id, pm.material_id, pm.amount_per_unit, rm.material_name, rm.unit FROM product_materials pm JOIN raw_materials rm ON rm.material_id = pm.material_id WHERE pm.product_id = ANY($1)',
+        [ids]
+      );
+      materialsMap = pmRes.rows.reduce((acc, row) => {
+        const list = acc.get(row.product_id) || [];
+        list.push({ raw_material_id: row.material_id, amount_per_unit: Number(row.amount_per_unit), material_name: row.material_name, unit: row.unit });
+        acc.set(row.product_id, list);
+        return acc;
+      }, new Map());
+    }
+
+    const withMaterials = products.map(p => ({ ...p, materials: materialsMap.get(p.product_id) || [] }));
+
+    res.json({ success: true, data: withMaterials, count: withMaterials.length });
   } catch (err) {
     console.error('Error fetching products:', err);
     res.status(500).json({
@@ -21,7 +37,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get product by ID
+// Get product by ID (with materials)
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -34,10 +50,12 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    res.json({
-      success: true,
-      data: result.rows[0]
-    });
+    const product = result.rows[0];
+    const pmRes = await pool.query(
+      'SELECT pm.material_id AS raw_material_id, pm.amount_per_unit FROM product_materials pm WHERE pm.product_id = $1',
+      [id]
+    );
+    res.json({ success: true, data: { ...product, materials: pmRes.rows } });
   } catch (err) {
     console.error('Error fetching product:', err);
     res.status(500).json({
@@ -75,10 +93,10 @@ router.get('/search/:query', async (req, res) => {
   }
 });
 
-// Create new product
+// Create new product (supports materials[]; product_materials holds material mapping)
 router.post('/', async (req, res) => {
   try {
-    const { name, standard_size, base_price, raw_material_id, amount_per_unit } = req.body;
+    const { name, standard_size, base_price, materials } = req.body;
     
     // Validate required fields
     if (!name || !base_price) {
@@ -96,29 +114,28 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // Validate raw_material_id if provided
-    if (raw_material_id) {
-      const materialCheck = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [raw_material_id]);
-      if (materialCheck.rows.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid raw material selected'
-        });
+    // Insert product (only core columns)
+    const result = await pool.query(
+      'INSERT INTO products (name, standard_size, base_price) VALUES ($1, $2, $3) RETURNING *',
+      [name, standard_size, parseFloat(base_price)]
+    );
+
+    // Optionally insert materials list
+    const productId = result.rows[0].product_id;
+    if (Array.isArray(materials) && materials.length > 0) {
+      for (const m of materials) {
+        if (!m.raw_material_id || !m.amount_per_unit) continue;
+        // validate each material id
+        const check = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [m.raw_material_id]);
+        if (check.rows.length === 0) {
+          return res.status(400).json({ success: false, error: `Invalid raw material: ${m.raw_material_id}` });
+        }
+        await pool.query(
+          'INSERT INTO product_materials (product_id, material_id, amount_per_unit) VALUES ($1, $2, $3) ON CONFLICT (product_id, material_id) DO UPDATE SET amount_per_unit = EXCLUDED.amount_per_unit',
+          [productId, m.raw_material_id, parseFloat(m.amount_per_unit)]
+        );
       }
     }
-    
-    // Validate amount_per_unit when raw_material_id is provided
-    if (raw_material_id && (amount_per_unit === undefined || isNaN(parseFloat(amount_per_unit)) || parseFloat(amount_per_unit) <= 0)) {
-      return res.status(400).json({
-        success: false,
-        error: 'amount_per_unit must be a positive number when raw material is selected'
-      });
-    }
-    
-    const result = await pool.query(
-      'INSERT INTO products (name, standard_size, base_price, raw_material_id, amount_per_unit) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name, standard_size, parseFloat(base_price), raw_material_id || null, amount_per_unit ? parseFloat(amount_per_unit) : null]
-    );
     
     res.status(201).json({
       success: true,
@@ -135,11 +152,94 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update product
+// Get only materials for a product
+router.get('/:id/materials', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pmRes = await pool.query(
+      'SELECT pm.material_id AS raw_material_id, pm.amount_per_unit FROM product_materials pm WHERE pm.product_id = $1 ORDER BY pm.material_id',
+      [id]
+    );
+    res.json({ success: true, data: pmRes.rows });
+  } catch (err) {
+    console.error('Error fetching product materials:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch product materials', message: err.message });
+  }
+});
+
+// Replace product materials list
+router.put('/:id/materials', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { materials } = req.body;
+    if (!Array.isArray(materials)) {
+      return res.status(400).json({ success: false, error: 'materials must be an array' });
+    }
+    await client.query('BEGIN');
+    await client.query('DELETE FROM product_materials WHERE product_id = $1', [id]);
+    for (const m of materials) {
+      if (!m.raw_material_id || !m.amount_per_unit) continue;
+      const check = await client.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [m.raw_material_id]);
+      if (check.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: `Invalid raw material: ${m.raw_material_id}` });
+      }
+      await client.query(
+        'INSERT INTO product_materials (product_id, material_id, amount_per_unit) VALUES ($1, $2, $3) ON CONFLICT (product_id, material_id) DO UPDATE SET amount_per_unit = EXCLUDED.amount_per_unit',
+        [id, m.raw_material_id, parseFloat(m.amount_per_unit)]
+      );
+    }
+    await client.query('COMMIT');
+    const pmRes = await pool.query('SELECT material_id AS raw_material_id, amount_per_unit FROM product_materials WHERE product_id = $1 ORDER BY material_id', [id]);
+    res.json({ success: true, data: pmRes.rows, message: 'Materials updated successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error updating product materials:', err);
+    res.status(500).json({ success: false, error: 'Failed to update product materials', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Backfill materials from legacy columns if they still exist
+router.post('/backfill-materials', async (_req, res) => {
+  const client = await pool.connect();
+  try {
+    // Check if legacy columns exist
+    const colCheck = await client.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'products' AND column_name IN ('raw_material_id','amount_per_unit')
+    `);
+    if (colCheck.rows.length < 2) {
+      return res.json({ success: true, message: 'Legacy columns not present. Nothing to backfill.' });
+    }
+
+    await client.query('BEGIN');
+    // Insert any missing product-material mappings from legacy fields
+    await client.query(`
+      INSERT INTO product_materials (product_id, material_id, amount_per_unit)
+      SELECT p.product_id, p.raw_material_id, p.amount_per_unit
+      FROM products p
+      WHERE p.raw_material_id IS NOT NULL AND p.amount_per_unit IS NOT NULL
+      ON CONFLICT (product_id, material_id) DO UPDATE SET amount_per_unit = EXCLUDED.amount_per_unit
+    `);
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Backfill completed' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error backfilling product materials:', err);
+    res.status(500).json({ success: false, error: 'Backfill failed', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Update product (supports materials[]; product_materials holds material mapping)
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, standard_size, base_price, raw_material_id, amount_per_unit } = req.body;
+    const { name, standard_size, base_price, materials } = req.body;
     
     if (!name || !base_price) {
       return res.status(400).json({
@@ -155,27 +255,9 @@ router.put('/:id', async (req, res) => {
       });
     }
     
-    // Validate raw_material_id if provided
-    if (raw_material_id) {
-      const materialCheck = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [raw_material_id]);
-      if (materialCheck.rows.length === 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid raw material selected'
-        });
-      }
-    }
-    
-    if (raw_material_id && (amount_per_unit === undefined || isNaN(parseFloat(amount_per_unit)) || parseFloat(amount_per_unit) <= 0)) {
-      return res.status(400).json({
-        success: false,
-        error: 'amount_per_unit must be a positive number when raw material is selected'
-      });
-    }
-    
     const result = await pool.query(
-      'UPDATE products SET name = $1, standard_size = $2, base_price = $3, raw_material_id = $4, amount_per_unit = $5 WHERE product_id = $6 RETURNING *',
-      [name, standard_size, parseFloat(base_price), raw_material_id || null, amount_per_unit ? parseFloat(amount_per_unit) : null, id]
+      'UPDATE products SET name = $1, standard_size = $2, base_price = $3 WHERE product_id = $4 RETURNING *',
+      [name, standard_size, parseFloat(base_price), id]
     );
     
     if (result.rows.length === 0) {
@@ -185,11 +267,24 @@ router.put('/:id', async (req, res) => {
       });
     }
     
-    res.json({
-      success: true,
-      data: result.rows[0],
-      message: 'Product updated successfully'
-    });
+    // Upsert materials
+    if (Array.isArray(materials)) {
+      // replace current set with provided set
+      await pool.query('DELETE FROM product_materials WHERE product_id = $1', [id]);
+      for (const m of materials) {
+        if (!m.raw_material_id || !m.amount_per_unit) continue;
+        const check = await pool.query('SELECT material_id FROM raw_materials WHERE material_id = $1', [m.raw_material_id]);
+        if (check.rows.length === 0) {
+          return res.status(400).json({ success: false, error: `Invalid raw material: ${m.raw_material_id}` });
+        }
+        await pool.query(
+          'INSERT INTO product_materials (product_id, material_id, amount_per_unit) VALUES ($1, $2, $3) ON CONFLICT (product_id, material_id) DO UPDATE SET amount_per_unit = EXCLUDED.amount_per_unit',
+          [id, m.raw_material_id, parseFloat(m.amount_per_unit)]
+        );
+      }
+    }
+
+    res.json({ success: true, data: result.rows[0], message: 'Product updated successfully' });
   } catch (err) {
     console.error('Error updating product:', err);
     res.status(500).json({

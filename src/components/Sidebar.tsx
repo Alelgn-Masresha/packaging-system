@@ -1,5 +1,6 @@
 import React from 'react';
 import { BarChart3, Users, Package, History, Tag, FileText, Warehouse } from 'lucide-react';
+import { useI18n } from '../i18n';
 import stepLogo from '../public/step_logo.png';
 
 interface SidebarProps {
@@ -9,14 +10,15 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onClose }) => {
+  const { t } = useI18n();
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'customers', label: 'Customers & Orders', icon: Users },
-    { id: 'track', label: 'Track Orders', icon: Package },
-    { id: 'history', label: 'Customer History', icon: History },
-    { id: 'products', label: 'Products', icon: Tag },
-    { id: 'inventory', label: 'Inventory Management', icon: Warehouse },
-    { id: 'reports', label: 'Reports', icon: FileText },
+    { id: 'dashboard', label: t('dashboard'), icon: BarChart3 },
+    { id: 'customers', label: t('customers_orders'), icon: Users },
+    { id: 'track', label: t('track_orders'), icon: Package },
+    { id: 'history', label: t('customer_history'), icon: History },
+    { id: 'products', label: t('products'), icon: Tag },
+    { id: 'inventory', label: t('inventory_management'), icon: Warehouse },
+    { id: 'reports', label: t('reports'), icon: FileText },
   ];
 
   return (

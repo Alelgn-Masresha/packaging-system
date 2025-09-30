@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, FileText, Download, Printer, Loader2, BarChart3, List } from 'lucide-react';
+import { useI18n } from '../i18n';
 import { ordersAPI, productsAPI, paymentsAPI } from '../services/api';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface ReportData {
   date: string;
@@ -75,8 +76,12 @@ const Reports: React.FC = () => {
   // Chart data states
   const [salesTrendData, setSalesTrendData] = useState<any[]>([]);
   const [orderVolumeData, setOrderVolumeData] = useState<any[]>([]);
-  const [productSalesData, setProductSalesData] = useState<any[]>([]);
+  // const [productSalesData, setProductSalesData] = useState<any[]>([]);
+  const [topProductSeriesData, setTopProductSeriesData] = useState<any[]>([]);
+  const [topProductKeys, setTopProductKeys] = useState<string[]>([]);
   const [statusDistributionData, setStatusDistributionData] = useState<any[]>([]);
+
+  const { t } = useI18n();
 
   useEffect(() => {
     loadProducts();
@@ -106,12 +111,14 @@ const Reports: React.FC = () => {
       const ordersResponse = await ordersAPI.getAll();
       const orders: Order[] = ordersResponse.data;
 
-      // Filter orders by date range
+      // Filter orders by date range (inclusive, end-of-day)
       const filteredOrders = orders.filter(order => {
         const orderDate = new Date(order.order_date);
         const fromDate = new Date(dateFrom);
+        fromDate.setHours(0, 0, 0, 0);
         const toDate = new Date(dateTo);
-        return orderDate >= fromDate && orderDate <= toDate;
+        toDate.setHours(23, 59, 59, 999);
+        return orderDate.getTime() >= fromDate.getTime() && orderDate.getTime() <= toDate.getTime();
       });
 
       // Filter by product type if not "All"
@@ -255,12 +262,14 @@ const Reports: React.FC = () => {
     }));
     setOrderVolumeData(orderVolume);
     
-    // Product sales data
+    // Product sales data (totals) and per-date series for top products
     const productSalesMap = new Map<string, { product: string; sales: number; orders: number }>();
+    const perDateProductSales = new Map<string, Map<string, number>>(); // date -> (product -> sales)
     
     orders.forEach(order => {
       const product = order.product_name;
       const sales = parseFloat(String(order.order_unit_price)) * order.quantity;
+      const dateKey = order.order_date;
       
       if (productSalesMap.has(product)) {
         const existing = productSalesMap.get(product)!;
@@ -269,12 +278,34 @@ const Reports: React.FC = () => {
       } else {
         productSalesMap.set(product, { product, sales, orders: 1 });
       }
+
+      // accumulate per-date for series
+      if (!perDateProductSales.has(dateKey)) {
+        perDateProductSales.set(dateKey, new Map<string, number>());
+      }
+      const mapForDate = perDateProductSales.get(dateKey)!;
+      mapForDate.set(product, (mapForDate.get(product) || 0) + sales);
     });
     
     const productSales = Array.from(productSalesMap.values())
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 5); // Top 5 products
-    setProductSalesData(productSales);
+    // setProductSalesData(productSales);
+
+    // Build series data for top products over time (vertical grouped bars)
+    const topKeys = productSales.map(p => p.product);
+    setTopProductKeys(topKeys);
+    const series = Array.from(perDateProductSales.entries())
+      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+      .map(([date, prodMap]) => {
+        const prettyDate = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const row: any = { date: prettyDate };
+        topKeys.forEach(k => {
+          row[k] = prodMap.get(k) || 0;
+        });
+        return row;
+      });
+    setTopProductSeriesData(series);
     
     // Status distribution data
     const statusMap = new Map<string, number>();
@@ -308,22 +339,30 @@ const Reports: React.FC = () => {
   const handleQuickFilter = (filter: string) => {
     const today = new Date();
     let fromDate: Date;
-    let toDate: Date = today;
+    let toDate: Date = new Date(today);
 
     switch (filter) {
       case 'Daily':
         fromDate = new Date(today);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
         break;
       case 'Weekly':
         fromDate = new Date(today);
-        fromDate.setDate(today.getDate() - 7);
+        fromDate.setDate(today.getDate() - 6);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
         break;
       case 'Monthly':
         fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        fromDate.setHours(0, 0, 0, 0);
         toDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        toDate.setHours(23, 59, 59, 999);
         break;
       default:
         fromDate = new Date(today);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(23, 59, 59, 999);
     }
 
     setDateFrom(fromDate.toISOString().split('T')[0]);
@@ -359,11 +398,11 @@ const Reports: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <div>
-                <h1 className="text-2xl font-bold text-white">Reports & Sales Analytics</h1>
+                <h1 className="text-2xl font-bold text-white">{t('reports')}</h1>
                 <div className="flex items-center space-x-2 mt-1">
                   <Calendar className="w-4 h-4 text-blue-100" />
                   <span className="text-blue-100 text-sm">
-                    Real-time sales data and analytics from your database
+                    {t('sales_trend')}
                   </span>
                 </div>
               </div>
@@ -386,7 +425,7 @@ const Reports: React.FC = () => {
               }`}
             >
               <BarChart3 className="w-4 h-4" />
-              <span>Summary Reports</span>
+              <span>{t('sales_summary')}</span>
             </button>
             <button
               onClick={() => setActiveSection('individual')}
@@ -397,7 +436,7 @@ const Reports: React.FC = () => {
               }`}
             >
               <List className="w-4 h-4" />
-              <span>Individual Reports</span>
+              <span>{t('report_breakdown')}</span>
             </button>
           </nav>
         </div>
@@ -411,7 +450,7 @@ const Reports: React.FC = () => {
         {/* Filters Section */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('filters')}</h2>
             {loading && (
               <div className="flex items-center space-x-2 text-gray-600">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -421,7 +460,7 @@ const Reports: React.FC = () => {
           </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">Date Range:</label>
+              <label className="text-sm font-medium text-gray-700">{t('date_range')}:</label>
             <div className="flex items-center space-x-2">
               <div className="relative">
                 <input
@@ -446,7 +485,7 @@ const Reports: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">Product Type:</label>
+            <label className="text-sm font-medium text-gray-700">{t('product_type')}:</label>
             <select
               value={productType}
               onChange={(e) => setProductType(e.target.value)}
@@ -462,7 +501,7 @@ const Reports: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">Quick Filters:</label>
+            <label className="text-sm font-medium text-gray-700">{t('quick_filters')}:</label>
             <div className="flex space-x-2">
               <label className="flex items-center">
                 <input
@@ -473,7 +512,7 @@ const Reports: React.FC = () => {
                   onChange={(e) => handleQuickFilter(e.target.value)}
                   className="mr-1"
                 />
-                <span className="text-sm">Today</span>
+                <span className="text-sm">{t('today')}</span>
               </label>
               <label className="flex items-center">
                 <input
@@ -484,7 +523,7 @@ const Reports: React.FC = () => {
                   onChange={(e) => handleQuickFilter(e.target.value)}
                   className="mr-1"
                 />
-                <span className="text-sm">This Week</span>
+                <span className="text-sm">{t('this_week')}</span>
               </label>
               <label className="flex items-center">
                 <input
@@ -495,7 +534,7 @@ const Reports: React.FC = () => {
                   onChange={(e) => handleQuickFilter(e.target.value)}
                   className="mr-1"
                 />
-                <span className="text-sm">This Month</span>
+                <span className="text-sm">{t('this_month')}</span>
               </label>
             </div>
           </div>
@@ -506,7 +545,7 @@ const Reports: React.FC = () => {
               disabled={loading}
               className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
-              <span>Clear Filters</span>
+              <span>{t('clear_filters')}</span>
             </button>
           </div>
         </div>
@@ -516,42 +555,42 @@ const Reports: React.FC = () => {
           <>
             {/* Sales Summary Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Sales Summary</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('sales_summary')}</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-green-900">{salesSummary.totalOrders}</div>
-                  <div className="text-sm text-green-600">Total Orders</div>
+                  <div className="text-sm text-green-600">{t('total_orders')}</div>
                 </div>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-blue-900">{salesSummary.completedOrders}</div>
-                  <div className="text-sm text-blue-600">Completed Orders</div>
+                  <div className="text-sm text-blue-600">{t('completed_orders')}</div>
                 </div>
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-yellow-900">{salesSummary.pendingOrders}</div>
-                  <div className="text-sm text-yellow-600">Pending Orders</div>
+                  <div className="text-sm text-yellow-600">{t('pending_orders')}</div>
                 </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-purple-900">{salesSummary.totalQuantity.toLocaleString()}</div>
-                  <div className="text-sm text-purple-600">Total Quantity</div>
+                  <div className="text-sm text-purple-600">{t('total_quantity')}</div>
                 </div>
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-indigo-900">{formatCurrency(salesSummary.totalSales)}</div>
-                  <div className="text-sm text-indigo-600">Total Sales</div>
+                  <div className="text-sm text-indigo-600">{t('total_sales')}</div>
                 </div>
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-green-900">{formatCurrency(salesSummary.totalPaid)}</div>
-                  <div className="text-sm text-green-600">Total Paid</div>
+                  <div className="text-sm text-green-600">{t('total_paid_label')}</div>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-red-900">{formatCurrency(salesSummary.outstanding)}</div>
-                  <div className="text-sm text-red-600">Outstanding</div>
+                  <div className="text-sm text-red-600">{t('outstanding_label')}</div>
                 </div>
               </div>
             </div>
 
             {/* Sales Trend Chart */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Sales Trend</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('sales_trend')}</h2>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={salesTrendData}>
@@ -577,27 +616,28 @@ const Reports: React.FC = () => {
               </div>
             </div>
 
-            {/* Product Sales Chart */}
+            {/* Product Sales Chart (Top 5 over time as grouped bars) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-6">Top Products by Sales</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('top_products_time')}</h2>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={productSalesData} layout="horizontal">
+                    <BarChart data={topProductSeriesData}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" />
-                      <YAxis dataKey="product" type="category" width={100} />
-                      <Tooltip 
-                        formatter={(value: any) => [formatCurrency(value), 'Sales']}
-                      />
-                      <Bar dataKey="sales" fill="#10B981" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip formatter={(value: any, name: string) => [formatCurrency(value as number), name]} />
+                      <Legend />
+                      {topProductKeys.map((key, idx) => (
+                        <Bar key={key} dataKey={key} fill={["#3B82F6", "#F59E0B", "#8B5CF6", "#10B981", "#EF4444"][idx % 5]} />
+                      ))}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-6">Order Status Distribution</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('order_status_distribution')}</h2>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -606,7 +646,7 @@ const Reports: React.FC = () => {
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ status, percentage }) => `${status} (${percentage}%)`}
+                        label={({ status, percentage }) => `${status === 'Completed' ? t('status_completed') : status === 'Delivered' ? t('status_delivered') : status === 'In Progress' ? t('status_in_progress') : status === 'Pending' ? t('status_pending') : status === 'Cancelled' ? t('status_cancelled') : status} (${percentage}%)`}
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="count"
@@ -625,28 +665,28 @@ const Reports: React.FC = () => {
             {/* Report Breakdown Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">Report Breakdown</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{t('report_breakdown')}</h2>
                 <div className="flex space-x-2">
                   <button
                     onClick={handleExportPDF}
                     className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
                   >
                     <FileText className="w-4 h-4" />
-                    <span>Export PDF</span>
+                    <span>{t('export_pdf')}</span>
                   </button>
                   <button
                     onClick={handleExportExcel}
                     className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Export Excel</span>
+                    <span>{t('export_excel')}</span>
                   </button>
                   <button
                     onClick={handlePrint}
                     className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
                   >
                     <Printer className="w-4 h-4" />
-                    <span>Print</span>
+                    <span>{t('print')}</span>
                   </button>
                 </div>
               </div>
@@ -655,24 +695,12 @@ const Reports: React.FC = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Product Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Orders
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Quantity
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Sales
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Paid
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('date')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('product_type_col')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('orders_col')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('quantity_col')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales_col')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paid_col')}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -687,9 +715,7 @@ const Reports: React.FC = () => {
                       </tr>
                     ) : reportData.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                          No data found for the selected filters
-                        </td>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">{t('no_data_found')}</td>
                       </tr>
                     ) : (
                       reportData.map((row, index) => (

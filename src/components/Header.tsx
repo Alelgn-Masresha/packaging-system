@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, User, X, Clock, AlertTriangle, Info, Loader2, Menu } from 'lucide-react';
+import { useI18n } from '../i18n';
 import { ordersAPI, rawMaterialsAPI } from '../services/api';
 
 interface Notification {
@@ -70,8 +71,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           notificationsList.push({
             id: `missed-${order.order_id}`,
             type: 'error',
-            title: 'Missed Delivery',
-            message: `Order #${order.order_id} for ${order.customer_name} was due ${Math.abs(daysUntilDelivery)} day${Math.abs(daysUntilDelivery) !== 1 ? 's' : ''} ago`,
+            title: t('notif_missed_title'),
+            message: tp('notif_missed_msg', { orderId: order.order_id, customer: order.customer_name, days: Math.abs(daysUntilDelivery) }),
             time: formatTimeAgo(deliveryDate),
             read: false,
             orderId: order.order_id,
@@ -82,8 +83,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           notificationsList.push({
             id: `due-today-${order.order_id}`,
             type: 'warning',
-            title: 'Due Today',
-            message: `Order #${order.order_id} for ${order.customer_name} is due for delivery today`,
+            title: t('notif_due_today_title'),
+            message: tp('notif_due_today_msg', { orderId: order.order_id, customer: order.customer_name }),
             time: 'Today',
             read: false,
             orderId: order.order_id,
@@ -94,8 +95,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           notificationsList.push({
             id: `1-day-${order.order_id}`,
             type: 'warning',
-            title: '1 Day Left',
-            message: `Order #${order.order_id} for ${order.customer_name} is due tomorrow`,
+            title: t('notif_1day_title'),
+            message: tp('notif_1day_msg', { orderId: order.order_id, customer: order.customer_name }),
             time: '1 day left',
             read: false,
             orderId: order.order_id,
@@ -106,8 +107,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           notificationsList.push({
             id: `2-day-${order.order_id}`,
             type: 'info',
-            title: '2 Days Left',
-            message: `Order #${order.order_id} for ${order.customer_name} is due in 2 days`,
+            title: t('notif_2day_title'),
+            message: tp('notif_2day_msg', { orderId: order.order_id, customer: order.customer_name }),
             time: '2 days left',
             read: false,
             orderId: order.order_id,
@@ -118,8 +119,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           notificationsList.push({
             id: `3-day-${order.order_id}`,
             type: 'info',
-            title: '3 Days Left',
-            message: `Order #${order.order_id} for ${order.customer_name} is due in 3 days`,
+            title: t('notif_3day_title'),
+            message: tp('notif_3day_msg', { orderId: order.order_id, customer: order.customer_name }),
             time: '3 days left',
             read: false,
             orderId: order.order_id,
@@ -133,8 +134,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
         notificationsList.push({
           id: `rm-${rm.material_id}`,
           type: isOut ? 'error' : 'warning',
-          title: isOut ? 'Material Out of Stock' : 'Material Low Stock',
-          message: `${rm.material_name}: ${rm.current_stock} ${rm.unit} available · Min ${rm.min_stock} ${rm.unit}`,
+          title: isOut ? t('notif_material_out_title') : t('notif_material_low_title'),
+          message: tp('notif_material_msg', { name: rm.material_name, current: rm.current_stock, unit: rm.unit, min: rm.min_stock }),
           time: 'Now',
           read: false,
         });
@@ -206,6 +207,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     setNotifications(notifications.map(notification => ({ ...notification, read: true })));
   };
 
+  const { t, tp, lang, setLang } = useI18n();
+
   return (
     <header className="z-50 bg-white shadow-sm border-b border-gray-300 md:fixed md:left-64 md:right-0 md:top-0">
       <div className="flex justify-between items-center px-4 md:px-8 py-3 md:py-4">
@@ -218,12 +221,22 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             <Menu className="w-6 h-6" />
           </button>
           <div>
-            <h2 className="text-xl md:text-2xl font-semibold text-gray-900">Dashboard</h2>
-            <p className="text-sm md:text-base text-gray-600">Welcome back! Here's what's happening today.</p>
+            <h2 className="text-xl md:text-2xl font-semibold text-gray-900">{t('dashboard')}</h2>
+            <p className="text-sm md:text-base text-gray-600">{t('welcome_back')}</p>
           </div>
         </div>
         
         <div className="flex items-center space-x-3 md:space-x-4">
+          {/* Language Switcher */}
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value as any)}
+            className="text-sm border border-gray-300 rounded px-2 py-1"
+            aria-label={t('language')}
+          >
+            <option value="en">English</option>
+            <option value="am">አማርኛ</option>
+          </select>
           <div className="relative">
             <button 
               onClick={() => setShowNotifications(!showNotifications)}
@@ -242,22 +255,22 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
               <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                 <div className="p-4 border-b border-gray-200">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{t('notifications')}</h3>
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={loadNotifications}
                         disabled={loading}
                         className="text-sm text-green-600 hover:text-green-800 transition-colors disabled:opacity-50"
-                        title="Refresh notifications"
+                        title={t('refresh')}
                       >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refresh'}
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('refresh')}
                       </button>
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
                           className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
                         >
-                          Mark all as read
+                          {t('mark_all_read')}
                         </button>
                       )}
                       <button
@@ -281,8 +294,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                   ) : notifications.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
                       <Bell className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                      <p>No notifications</p>
-                      <p className="text-xs text-gray-400 mt-1">All caught up!</p>
+                      <p>{t('no_notifications')}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t('all_caught_up')}</p>
                     </div>
                   ) : (
                     notifications.map((notification) => (
@@ -318,7 +331,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                 {notifications.length > 0 && (
                   <div className="p-3 border-t border-gray-200">
                     <button className="w-full text-center text-sm text-blue-600 hover:text-blue-800 transition-colors">
-                      View all notifications
+                      {t('view_all_notifications')}
                     </button>
                   </div>
                 )}

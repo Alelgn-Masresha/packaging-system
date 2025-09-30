@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Filter, Loader2 } from 'lucide-react';
+import { useI18n } from '../i18n';
 import { ordersAPI, paymentsAPI } from '../services/api';
 
 interface Order {
@@ -38,6 +39,7 @@ interface OrderWithPaymentStatus extends Order {
 
 const TrackOrders: React.FC = () => {
   const [orders, setOrders] = useState<OrderWithPaymentStatus[]>([]);
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -76,12 +78,22 @@ const TrackOrders: React.FC = () => {
           try {
             const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
             const paymentData = paymentSummary.data.payment_summary;
-            
+
+            // Recalculate totals using order_unit_price to honor discounts
+            const totalDue = order.order_unit_price * order.quantity;
+            const totalPaid = parseFloat(String(paymentData.total_paid || 0));
+            const outstanding = Math.max(0, totalDue - totalPaid);
+            const paymentStatus = totalPaid <= 0
+              ? 'Unpaid'
+              : totalPaid >= totalDue
+              ? 'Paid'
+              : 'Partial';
+
             return {
               ...order,
-              payment_status: paymentData.payment_status,
-              total_paid: paymentData.total_paid,
-              outstanding: paymentData.outstanding,
+              payment_status: paymentStatus,
+              total_paid: totalPaid,
+              outstanding,
             } as OrderWithPaymentStatus;
           } catch (err) {
             // If no payments found, set default values
@@ -370,13 +382,21 @@ const TrackOrders: React.FC = () => {
                       }
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                      {order.status}
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                      {order.status === 'Pending' ? t('status_pending')
+                        : order.status === 'In Progress' ? t('status_in_progress')
+                        : order.status === 'Completed' ? t('status_completed')
+                        : order.status === 'Delivered' ? t('status_delivered')
+                        : order.status === 'Cancelled' ? t('status_cancelled')
+                        : order.status}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPaymentColor(order.payment_status)}`}>
-                        {order.payment_status}
+                        {order.payment_status === 'Paid' ? t('payment_paid')
+                          : order.payment_status === 'Partial' ? t('payment_partial')
+                          : order.payment_status === 'Unpaid' ? t('payment_unpaid')
+                          : order.payment_status}
                     </span>
                   </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">

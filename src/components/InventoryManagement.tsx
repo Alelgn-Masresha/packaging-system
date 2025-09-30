@@ -11,11 +11,12 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
+import { useI18n } from '../i18n';
 import { rawMaterialsAPI } from '../services/api';
 import { FileText } from 'lucide-react';
 import MaterialFormModal from './MaterialFormModal';
 import AddQuantityModal from './AddQuantityModal';
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface Material {
   material_id: number;
@@ -31,6 +32,7 @@ interface Material {
 }
 
 const InventoryManagement: React.FC = () => {
+  const { t } = useI18n();
   // Deprecated settings states removed
   const [searchTerm, setSearchTerm] = useState('');
   // Settings removed
@@ -61,7 +63,9 @@ const InventoryManagement: React.FC = () => {
   // Chart data states
   const [stockTrendData, setStockTrendData] = useState<any[]>([]);
   const [transactionVolumeData, setTransactionVolumeData] = useState<any[]>([]);
-  const [materialUsageData, setMaterialUsageData] = useState<any[]>([]);
+  // const [materialUsageData, setMaterialUsageData] = useState<any[]>([]);
+  const [topMaterialSeriesData, setTopMaterialSeriesData] = useState<any[]>([]);
+  const [topMaterialKeys, setTopMaterialKeys] = useState<string[]>([]);
   const [transactionTypeData, setTransactionTypeData] = useState<any[]>([]);
 
   // Load materials from API
@@ -285,10 +289,12 @@ const InventoryManagement: React.FC = () => {
     
     // Material usage data (top materials by transaction volume)
     const materialUsageMap = new Map<string, { material: string; add: number; subtract: number; net: number }>();
+    const perDateMaterial = new Map<string, Map<string, number>>(); // date -> (material -> net)
     
     transactions.forEach(transaction => {
       const material = transaction.material_name;
       const quantity = parseFloat(transaction.quantity);
+      const dateKey = transaction.created_at.split('T')[0];
       
       if (materialUsageMap.has(material)) {
         const existing = materialUsageMap.get(material)!;
@@ -308,13 +314,36 @@ const InventoryManagement: React.FC = () => {
           net: add - subtract 
         });
       }
+
+      // accumulate per-date series by net movement
+      if (!perDateMaterial.has(dateKey)) {
+        perDateMaterial.set(dateKey, new Map<string, number>());
+      }
+      const m = perDateMaterial.get(dateKey)!;
+      const delta = transaction.transaction_type === 'ADD' ? quantity : transaction.transaction_type === 'SUBTRACT' ? -quantity : 0;
+      m.set(material, (m.get(material) || 0) + delta);
     });
     
     const materialUsage = Array.from(materialUsageMap.values())
       .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
       .slice(0, 5); // Top 5 materials
     
-    setMaterialUsageData(materialUsage);
+    // setMaterialUsageData(materialUsage);
+
+    // Build grouped bar series for top materials over time using net change
+    const topKeys = materialUsage.map(m => m.material);
+    setTopMaterialKeys(topKeys);
+    const series = Array.from(perDateMaterial.entries())
+      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+      .map(([date, matMap]) => {
+        const prettyDate = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const row: any = { date: prettyDate };
+        topKeys.forEach(k => {
+          row[k] = matMap.get(k) || 0;
+        });
+        return row;
+      });
+    setTopMaterialSeriesData(series);
     
     // Transaction type distribution
     const typeMap = new Map<string, number>();
@@ -339,14 +368,12 @@ const InventoryManagement: React.FC = () => {
         {/* Header */}
         <div className="bg-green-600 rounded-lg p-6 mb-6 relative">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4">
               <div>
-                <h1 className="text-2xl font-bold text-white">Raw Materials Inventory</h1>
+              <h1 className="text-2xl font-bold text-white">{t('raw_materials_inventory')}</h1>
                 <div className="flex items-center space-x-2 mt-1">
                   <Calendar className="w-4 h-4 text-green-100" />
-                  <span className="text-green-100 text-sm">
-                    Last Updated: {lastUpdated || 'Loading...'}
-                  </span>
+                <span className="text-green-100 text-sm">{t('last_updated')}: {lastUpdated || 'Loading...'}</span>
                 </div>
               </div>
             </div>
@@ -356,7 +383,7 @@ const InventoryManagement: React.FC = () => {
                 className="bg-white text-green-600 px-4 py-2 rounded-lg hover:bg-green-50 transition-colors flex items-center space-x-2"
               >
                 <Plus className="w-4 h-4" />
-                <span>Add Material</span>
+                <span>{t('add_material')}</span>
               </button>
               <Package className="w-6 h-6 text-green-100" />
             </div>
@@ -374,7 +401,7 @@ const InventoryManagement: React.FC = () => {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Raw Material Inventory
+              {t('inventory_tab')}
             </button>
             <button
               onClick={() => setActiveSection('transactions')}
@@ -384,7 +411,7 @@ const InventoryManagement: React.FC = () => {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Stock Transactions
+              {t('transactions_tab')}
             </button>
           </nav>
         </div>
@@ -398,7 +425,7 @@ const InventoryManagement: React.FC = () => {
               <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search materials..."
+                placeholder={t('search_materials')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent w-64"
@@ -406,12 +433,12 @@ const InventoryManagement: React.FC = () => {
             </div>
             <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
               <Filter className="w-4 h-4" />
-              <span>Filter</span>
+              <span>{t('filter')}</span>
               <ChevronDown className="w-4 h-4" />
             </button>
           </div>
           <div className="text-sm text-gray-600">
-            Total Materials: {loading ? '-' : filteredMaterials.length}
+            {t('total_materials')}: {loading ? '-' : filteredMaterials.length}
           </div>
         </div>
 
@@ -440,25 +467,25 @@ const InventoryManagement: React.FC = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Material Name
+                    {t('material_name')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Category
+                    {t('category')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Current Stock
+                    {t('current_stock')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Unit
+                    {t('unit')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Min. Stock
+                    {t('min_stock')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Add Quantity
+                    {t('add_quantity')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    {t('actions')}
                   </th>
                 </tr>
               </thead>
@@ -503,7 +530,9 @@ const InventoryManagement: React.FC = () => {
                             {material.current_stock.toLocaleString()}
                           </div>
                           <div className={`text-sm ${getStatusColor(material.status)}`}>
-                            {material.status}
+                            {material.status === 'Low Stock' ? t('stock_low')
+                              : material.status === 'Out of Stock' ? t('stock_out')
+                              : t('stock_available')}
                           </div>
                         </div>
                       </td>
@@ -647,18 +676,15 @@ const InventoryManagement: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Top Materials by Usage</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={materialUsageData} layout="horizontal">
+              <BarChart data={topMaterialSeriesData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="material" type="category" width={120} />
-                <Tooltip 
-                  formatter={(value: any, name: string) => [
-                    value,
-                    name === 'add' ? 'Added' : name === 'subtract' ? 'Subtracted' : 'Net'
-                  ]}
-                />
-                <Bar dataKey="add" stackId="a" fill="#10B981" name="Added" />
-                <Bar dataKey="subtract" stackId="a" fill="#EF4444" name="Subtracted" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                {topMaterialKeys.map((key, idx) => (
+                  <Bar key={key} dataKey={key} fill={["#10B981", "#F59E0B", "#3B82F6", "#8B5CF6", "#EF4444"][idx % 5]} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
