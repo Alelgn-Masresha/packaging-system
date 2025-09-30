@@ -48,8 +48,8 @@ function App() {
 
       {/* Sidebar (drawer on mobile) */}
       <div
-        className={`fixed md:static inset-y-0 left-0 z-50 transform transition-transform duration-200 ease-in-out md:translate-x-0 w-64 ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        className={`fixed h-full inset-y-0 left-0 bottom-0 z-50 transform transition-transform duration-200 ease-in-out md:translate-x-0 w-64 bg-gray-100 ${
+          isSidebarOpen ? 'translate-x-0 top-20' : '-translate-x-full md:translate-x-0'
         }`}
       >
         <Sidebar
@@ -63,9 +63,9 @@ function App() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col mt-0 md:mt-20 md:ml-64">
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto md:pt-20">
           {renderView()}
         </main>
       </div>

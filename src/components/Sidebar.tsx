@@ -20,7 +20,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, onViewChange, onClose }) 
   ];
 
   return (
-    <div className="w-64 h-full bg-gray-100 shadow-sm border-r border-gray-300 md:h-auto">
+    <div className="w-64 bg-gray-100 shadow-sm border-r border-gray-300 md:h-screen md:fixed md:left-0 md:top-0 md:z-40">
       <div className="p-6 border-b border-gray-300 bg-gradient-to-r from-green-500 to-green-600">
         <div className="flex items-center space-x-2">
           <img src={stepLogo} alt="STEP Packaging" className="h-10" />
