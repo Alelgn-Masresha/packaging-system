@@ -13,7 +13,10 @@ const dbConfig = {
 };
 
 // Create a new pool instance
-const pool = new Pool(dbConfig);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // if needed
+});
 
 // Handle pool errors
 pool.on('error', (err) => {
