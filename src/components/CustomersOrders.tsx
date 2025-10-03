@@ -28,7 +28,6 @@ interface MaterialRequirement {
 
 const CustomersOrders: React.FC = () => {
   const [showNewOrder, setShowNewOrder] = useState(false);
-  const [sizeType, setSizeType] = useState('standard');
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentCustomer, setCurrentCustomer] = useState<Customer | null>(null);
@@ -45,14 +44,18 @@ const CustomersOrders: React.FC = () => {
     address: '',
   });
   const [orderForm, setOrderForm] = useState({
+    products: [{
     product: '',
     quantity: '',
     unitPrice: '',
     total: '',
+      amountPerUnit: '',
+      is_custom_size: false,
+      order_from_stock: false,
     length: '',
     width: '',
     height: '',
-    amountPerUnit: '',
+    }],
     deliveryDate: '',
     paymentAmount: '',
     referenceNumber: '',
@@ -154,23 +157,31 @@ const CustomersOrders: React.FC = () => {
     }
   };
 
-  const handleOrderFormChange = (field: string, value: string) => {
+  const handleProductFieldChange = (index: number, field: string, value: string) => {
     setOrderForm(prev => {
-      const updated = { ...prev, [field]: value };
+      const updatedProducts = [...prev.products];
+      
+      if (field === 'is_custom_size') {
+        updatedProducts[index] = { ...updatedProducts[index], is_custom_size: value === 'true' };
+      } else if (field === 'order_from_stock') {
+        updatedProducts[index] = { ...updatedProducts[index], order_from_stock: value === 'true' };
+      } else {
+        updatedProducts[index] = { ...updatedProducts[index], [field]: value };
+      }
       
       // Auto-fill unit price when product is selected
       if (field === 'product' && value) {
         const selectedProduct = products.find(p => p.product_id.toString() === value);
         if (selectedProduct) {
           const base = Number(selectedProduct.base_price);
-          updated.unitPrice = Number.isNaN(base) ? '' : base.toString();
+          updatedProducts[index].unitPrice = Number.isNaN(base) ? '' : base.toString();
         }
       }
       
       // Calculate total if quantity and unit price are provided
       if (field === 'quantity' || field === 'unitPrice' || field === 'product') {
-        const quantity = field === 'quantity' ? value : prev.quantity;
-        let unitPrice = field === 'unitPrice' ? value : prev.unitPrice;
+        const quantity = updatedProducts[index].quantity;
+        let unitPrice = updatedProducts[index].unitPrice;
         
         // Auto-fill unit price if product changed
         if (field === 'product' && value) {
@@ -178,21 +189,38 @@ const CustomersOrders: React.FC = () => {
           if (selectedProduct) {
             const base = Number(selectedProduct.base_price);
             unitPrice = Number.isNaN(base) ? '' : base.toString();
+            updatedProducts[index].unitPrice = unitPrice;
           }
         }
         
         if (quantity && unitPrice) {
-          updated.total = (parseFloat(quantity) * parseFloat(unitPrice)).toFixed(2);
+          updatedProducts[index].total = (parseFloat(quantity) * parseFloat(unitPrice)).toFixed(2);
         }
       }
       
-      return updated;
+      return { ...prev, products: updatedProducts };
     });
   };
 
+  const handleAddProduct = () => {
+    setOrderForm(prev => ({
+      ...prev,
+      products: [...prev.products, { product: '', quantity: '', unitPrice: '', total: '', amountPerUnit: '', is_custom_size: false, order_from_stock: false, length: '', width: '', height: '' }]
+    }));
+  };
+
+  const handleRemoveProduct = (index: number) => {
+    setOrderForm(prev => ({
+      ...prev,
+      products: prev.products.filter((_, i) => i !== index)
+    }));
+  };
+
   const handleSaveOrder = async () => {
-    if (!currentCustomer || !orderForm.product || !orderForm.quantity || !orderForm.deliveryDate) {
-      setError('Please fill in all required fields');
+    // Validate products
+    const validProducts = orderForm.products.filter(p => p.product && p.quantity && p.unitPrice);
+    if (!currentCustomer || validProducts.length === 0 || !orderForm.deliveryDate) {
+      setError('Please fill in customer, at least one product with quantity, and delivery date');
       return;
     }
 
@@ -200,33 +228,40 @@ const CustomersOrders: React.FC = () => {
       setSubmitting(true);
       setError(null);
 
-      // Check raw material requirements first
-      const materialCheck = await ordersAPI.checkMaterials(
-        parseInt(orderForm.product),
-        parseInt(orderForm.quantity),
-        sizeType === 'custom' ? orderForm.amountPerUnit : undefined
-      );
+      // Check raw material requirements for products that are NOT ordered from stock
+      for (const prod of validProducts) {
+        if (!prod.order_from_stock) {
+          const materialCheck = await ordersAPI.checkMaterials(
+              parseInt(prod.product),
+              parseInt(prod.quantity),
+              prod.is_custom_size && prod.amountPerUnit ? prod.amountPerUnit : undefined
+          );
 
-      if (materialCheck.data.has_insufficient) {
-        const warningMessages = materialCheck.data.insufficient_materials.map((req: MaterialRequirement) => 
-          `Insufficient ${req.material_name}: Need ${req.total_required} ${req.unit}, but only have ${req.current_stock} ${req.unit}`
-        );
-        setError(`You don't have enough materials:\n${warningMessages.join('\n')}`);
-        return;
+          if (materialCheck.data.has_insufficient) {
+            const warningMessages = materialCheck.data.insufficient_materials.map((req: MaterialRequirement) => 
+              `Insufficient ${req.material_name}: Need ${req.total_required} ${req.unit}, but only have ${req.current_stock} ${req.unit}`
+            );
+            setError(`You don't have enough materials:\n${warningMessages.join('\n')}`);
+            return;
+          }
+        }
       }
 
-      // Create order
+      // Create order with multiple products
       const orderResponse = await ordersAPI.create({
         customer_id: currentCustomer.customer_id,
-        product_id: parseInt(orderForm.product),
         delivery_date: orderForm.deliveryDate,
-        quantity: parseInt(orderForm.quantity),
-        order_unit_price: parseFloat(orderForm.unitPrice),
-        is_custom_size: sizeType === 'custom',
-        length: sizeType === 'custom' ? parseFloat(orderForm.length) : undefined,
-        width: sizeType === 'custom' ? parseFloat(orderForm.width) : undefined,
-        height: sizeType === 'custom' ? parseFloat(orderForm.height) : undefined,
-        amount_per_unit: sizeType === 'custom' ? orderForm.amountPerUnit : undefined,
+        products: validProducts.map(p => ({
+          product_id: parseInt(p.product),
+          quantity: parseInt(p.quantity),
+          order_unit_price: parseFloat(p.unitPrice),
+          amount_per_unit: p.is_custom_size && p.amountPerUnit ? parseFloat(p.amountPerUnit) : undefined,
+          is_custom_size: p.is_custom_size,
+          order_from_stock: p.order_from_stock,
+          length: p.is_custom_size && p.length ? parseFloat(p.length) : undefined,
+          width: p.is_custom_size && p.width ? parseFloat(p.width) : undefined,
+          height: p.is_custom_size && p.height ? parseFloat(p.height) : undefined,
+        })),
       });
 
       // Create payment if payment amount is provided
@@ -242,19 +277,22 @@ const CustomersOrders: React.FC = () => {
       // Reset form
       setShowNewOrder(false);
       setOrderForm({
+        products: [{
         product: '',
         quantity: '',
         unitPrice: '',
         total: '',
+          amountPerUnit: '',
+          is_custom_size: false,
+          order_from_stock: false,
         length: '',
         width: '',
         height: '',
-        amountPerUnit: '',
+        }],
         deliveryDate: '',
         paymentAmount: '',
         referenceNumber: '',
       });
-      setSizeType('standard');
 
       // Show success message or redirect
       alert('Order created successfully!');
@@ -391,11 +429,41 @@ const CustomersOrders: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-900 mb-6">New Order</h2>
           
           <div className="space-y-6">
+            {/* Products Section */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Product:</label>
+              <div className="flex justify-between items-center mb-4">
+                <label className="block text-sm font-medium text-gray-700">Products:</label>
+                <button
+                  type="button"
+                  onClick={handleAddProduct}
+                  className="flex items-center space-x-1 text-green-600 hover:text-green-700 text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Product</span>
+                </button>
+              </div>
+              
+              {orderForm.products.map((productItem, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Product #{index + 1}</h3>
+                    {orderForm.products.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProduct(index)}
+                        className="text-red-600 hover:text-red-700 text-sm"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-2">Product:</label>
               <select 
-                value={orderForm.product}
-                onChange={(e) => handleOrderFormChange('product', e.target.value)}
+                        value={productItem.product}
+                        onChange={(e) => handleProductFieldChange(index, 'product', e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="">Select Product</option>
@@ -407,89 +475,66 @@ const CustomersOrders: React.FC = () => {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-4">Size Type:</label>
-              <div className="space-y-3">
+                    <div className="mb-3">
                 <label className="flex items-center">
                   <input
-                    type="radio"
-                    name="sizeType"
-                    value="standard"
-                    checked={sizeType === 'standard'}
-                    onChange={(e) => setSizeType(e.target.value)}
-                    className="mr-3"
-                  />
-                  <span>Standard (Predefined Size & Price)</span>
+                          type="checkbox"
+                          checked={productItem.is_custom_size}
+                          onChange={(e) => handleProductFieldChange(index, 'is_custom_size', e.target.checked ? 'true' : 'false')}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700">Custom Size</span>
                 </label>
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="sizeType"
-                    value="custom"
-                    checked={sizeType === 'custom'}
-                    onChange={(e) => setSizeType(e.target.value)}
-                    className="mr-3"
-                  />
-                  <span>Custom</span>
-                </label>
-              </div>
             </div>
 
-            {sizeType === 'custom' && (
-              <>
-                <div className="grid grid-cols-3 gap-4">
+                    <div className="mb-3">
+                <label className="flex items-center">
+                  <input
+                          type="checkbox"
+                          checked={productItem.order_from_stock}
+                          onChange={(e) => handleProductFieldChange(index, 'order_from_stock', e.target.checked ? 'true' : 'false')}
+                          className="mr-2"
+                        />
+                        <span className="text-sm text-gray-700">Order from Stock (subtract from product stock instead of raw materials)</span>
+                </label>
+            </div>
+
+                    {productItem.is_custom_size && (
+                      <div className="grid grid-cols-3 gap-3 mb-4 bg-white p-3 rounded border border-gray-300">
                   <div>
-                    <label className="block text-sm text-gray-600 mb-2">Length:</label>
+                          <label className="block text-xs text-gray-600 mb-1">Length:</label>
                     <input
-                      type="text"
-                      value={orderForm.length}
-                      onChange={(e) => handleOrderFormChange('length', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            type="number"
+                            step="0.01"
+                            value={productItem.length}
+                            onChange={(e) => handleProductFieldChange(index, 'length', e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            placeholder="L"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-600 mb-2">Width:</label>
+                          <label className="block text-xs text-gray-600 mb-1">Width:</label>
                     <input
-                      type="text"
-                      value={orderForm.width}
-                      onChange={(e) => handleOrderFormChange('width', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            type="number"
+                            step="0.01"
+                            value={productItem.width}
+                            onChange={(e) => handleProductFieldChange(index, 'width', e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            placeholder="W"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-600 mb-2">Height:</label>
-                    <input
-                      type="text"
-                      value={orderForm.height}
-                      onChange={(e) => handleOrderFormChange('height', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Amount per Unit (Raw Material)
-                  </label>
-                  <div className="relative">
+                          <label className="block text-xs text-gray-600 mb-1">Height:</label>
                     <input
                       type="number"
                       step="0.01"
-                      value={orderForm.amountPerUnit}
-                      onChange={(e) => handleOrderFormChange('amountPerUnit', e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter amount of raw material per unit"
-                      required
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <span className="text-gray-500 text-sm">units</span>
+                            value={productItem.height}
+                            onChange={(e) => handleProductFieldChange(index, 'height', e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            placeholder="H"
+                          />
                     </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Specify how much raw material is needed per unit for this custom size
-                  </p>
-                </div>
-              </>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -497,8 +542,8 @@ const CustomersOrders: React.FC = () => {
                 <label className="block text-sm text-gray-600 mb-2">Quantity:</label>
                 <input
                   type="number"
-                  value={orderForm.quantity}
-                  onChange={(e) => handleOrderFormChange('quantity', e.target.value)}
+                          value={productItem.quantity}
+                          onChange={(e) => handleProductFieldChange(index, 'quantity', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -507,8 +552,8 @@ const CustomersOrders: React.FC = () => {
                 <input
                   type="number"
                   step="0.01"
-                  value={orderForm.unitPrice}
-                  onChange={(e) => handleOrderFormChange('unitPrice', e.target.value)}
+                          value={productItem.unitPrice}
+                          onChange={(e) => handleProductFieldChange(index, 'unitPrice', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -516,12 +561,41 @@ const CustomersOrders: React.FC = () => {
                 <label className="block text-sm text-gray-600 mb-2">Total:</label>
                 <input
                   type="text"
-                  value={orderForm.total}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+                          value={productItem.total}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-100"
                   readOnly
                 />
               </div>
             </div>
+                    
+                    {productItem.is_custom_size && (
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-2">Amount per Unit (Raw Material):</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={productItem.amountPerUnit}
+                          onChange={(e) => handleProductFieldChange(index, 'amountPerUnit', e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Raw material amount"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Order Grand Total */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700">Order Grand Total:</span>
+                  <span className="text-lg font-bold text-blue-900">
+                    ETB {orderForm.products.reduce((sum, p) => sum + (parseFloat(p.total) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
 
             {/* Delivery Date Section */}
             <div>
@@ -531,7 +605,7 @@ const CustomersOrders: React.FC = () => {
               <input
                 type="date"
                 value={orderForm.deliveryDate}
-                onChange={(e) => handleOrderFormChange('deliveryDate', e.target.value)}
+                onChange={(e) => setOrderForm({ ...orderForm, deliveryDate: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -549,7 +623,7 @@ const CustomersOrders: React.FC = () => {
                     type="number"
                     step="0.01"
                     value={orderForm.paymentAmount}
-                    onChange={(e) => handleOrderFormChange('paymentAmount', e.target.value)}
+                    onChange={(e) => setOrderForm({ ...orderForm, paymentAmount: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="0.00"
                   />
@@ -561,7 +635,7 @@ const CustomersOrders: React.FC = () => {
                   <input
                     type="text"
                     value={orderForm.referenceNumber}
-                    onChange={(e) => handleOrderFormChange('referenceNumber', e.target.value)}
+                    onChange={(e) => setOrderForm({ ...orderForm, referenceNumber: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter reference number"
                   />

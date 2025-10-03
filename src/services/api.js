@@ -114,6 +114,9 @@ export const productsAPI = {
 
   // Delete product
   delete: (id) => apiService.delete(`/products/${id}`),
+
+  // Add stock to product
+  addStock: (id, quantity) => apiService.post(`/products/${id}/stock`, { quantity }),
 };
 
 export const ordersAPI = {

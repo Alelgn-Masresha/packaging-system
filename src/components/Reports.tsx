@@ -23,18 +23,34 @@ interface SalesSummary {
   outstanding: number;
 }
 
+interface OrderProduct {
+  product_id: number;
+  product_name: string;
+  standard_size: string;
+  base_price: number;
+  order_unit_price: number;
+  quantity: number;
+  is_custom_size: boolean;
+  length?: number;
+  width?: number;
+  height?: number;
+  amount_per_unit?: number;
+}
+
 interface Order {
   order_id: number;
   customer_id: number;
   customer_name: string;
-  product_id: number;
-  product_name: string;
-  quantity: number;
-  base_price: string | number;
-  order_unit_price: string | number;
+  products: OrderProduct[];
   status: string;
   order_date: string;
   delivery_date: string;
+  // Legacy fields (first product) for backward compatibility
+  product_id?: number;
+  product_name?: string;
+  quantity?: number;
+  base_price?: string | number;
+  order_unit_price?: string | number;
 }
 
 interface Product {
@@ -57,6 +73,9 @@ const Reports: React.FC = () => {
   
   // Section tabs
   const [activeSection, setActiveSection] = useState<'summary' | 'individual'>('summary');
+  
+  // Report breakdown view toggle
+  const [breakdownView, setBreakdownView] = useState<'daily' | 'product'>('daily');
   
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [salesSummary, setSalesSummary] = useState<SalesSummary>({
@@ -91,7 +110,7 @@ const Reports: React.FC = () => {
   // Auto-apply filters when filter values change
   useEffect(() => {
     loadReportData();
-  }, [dateFrom, dateTo, productType]);
+  }, [dateFrom, dateTo, productType, breakdownView]);
 
   const loadProducts = async () => {
     try {
@@ -124,7 +143,9 @@ const Reports: React.FC = () => {
       // Filter by product type if not "All"
       const productFilteredOrders = productType === 'All' 
         ? filteredOrders 
-        : filteredOrders.filter(order => order.product_name === productType);
+        : filteredOrders.filter(order => 
+            (order.products || []).some(product => product.product_name === productType)
+          );
 
       // Store filtered orders for individual order display
       setFilteredOrders(productFilteredOrders);
@@ -138,19 +159,29 @@ const Reports: React.FC = () => {
         pendingOrders: productFilteredOrders.filter(order => 
           ['Pending', 'In Progress'].includes(order.status)
         ).length,
-        totalQuantity: productFilteredOrders.reduce((sum, order) => sum + order.quantity, 0),
+        totalQuantity: productFilteredOrders.reduce((sum, order) => 
+          sum + (order.products || []).reduce((productSum, product) => productSum + product.quantity, 0), 0
+        ),
         totalSales: 0,
         totalPaid: 0,
         outstanding: 0,
       };
 
-      // Calculate payment information for each order
+      // Calculate payment information for each order (exclude cancelled orders)
       let totalSales = 0;
       let totalPaid = 0;
       
       for (const order of productFilteredOrders) {
-        const orderTotal = parseFloat(String(order.order_unit_price)) * order.quantity;
+        // Calculate order total from all products
+        const orderTotal = (order.products || []).reduce((sum, product) => 
+          sum + (product.order_unit_price * product.quantity), 0
+        );
         totalSales += orderTotal;
+        
+        // Skip payment calculation for cancelled orders
+        if (order.status === 'Cancelled') {
+          continue;
+        }
         
         try {
           const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
@@ -168,43 +199,55 @@ const Reports: React.FC = () => {
       // Process data for charts
       processChartData(productFilteredOrders);
 
-      // Generate report data grouped by date and product
+      // Generate report data based on selected view
       const reportMap = new Map<string, ReportData>();
       
       for (const order of productFilteredOrders) {
         const date = order.order_date;
-        const key = `${date}_${order.product_name}`;
         
-        if (reportMap.has(key)) {
-          const existing = reportMap.get(key)!;
-          existing.orders += 1;
-          existing.quantity += order.quantity;
-          existing.sales += parseFloat(String(order.order_unit_price)) * order.quantity;
+        // Process each product in the order
+        for (const product of (order.products || [])) {
+          // Choose grouping key based on breakdown view
+          const key = breakdownView === 'daily' 
+            ? `${date}_${product.product_name}`  // Group by date and product
+            : product.product_name;              // Group by product only
           
-          // Add payment amount
-          try {
-            const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
-            existing.paid += parseFloat(paymentSummary.data.payment_summary.total_paid);
-          } catch (err) {
-            // No payments for this order
+          if (reportMap.has(key)) {
+            const existing = reportMap.get(key)!;
+            existing.orders += 1;
+            existing.quantity += product.quantity;
+            existing.sales += product.order_unit_price * product.quantity;
+            
+            // Add payment amount (skip cancelled orders)
+            if (order.status !== 'Cancelled') {
+              try {
+                const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
+                existing.paid += parseFloat(paymentSummary.data.payment_summary.total_paid);
+              } catch (err) {
+                // No payments for this order
+              }
+            }
+          } else {
+            let paidAmount = 0;
+            // Skip payment calculation for cancelled orders
+            if (order.status !== 'Cancelled') {
+              try {
+                const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
+                paidAmount = parseFloat(paymentSummary.data.payment_summary.total_paid);
+              } catch (err) {
+                // No payments for this order
+              }
+            }
+            
+            reportMap.set(key, {
+              date: breakdownView === 'daily' ? date : 'All Dates',
+              productType: product.product_name,
+              orders: 1,
+              quantity: product.quantity,
+              sales: product.order_unit_price * product.quantity,
+              paid: paidAmount,
+            });
           }
-        } else {
-          let paidAmount = 0;
-          try {
-            const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
-            paidAmount = parseFloat(paymentSummary.data.payment_summary.total_paid);
-          } catch (err) {
-            // No payments for this order
-          }
-          
-          reportMap.set(key, {
-            date: date,
-            productType: order.product_name,
-            orders: 1,
-            quantity: order.quantity,
-            sales: parseFloat(String(order.order_unit_price)) * order.quantity,
-            paid: paidAmount,
-          });
         }
       }
       
@@ -235,14 +278,17 @@ const Reports: React.FC = () => {
     
     orders.forEach(order => {
       const date = order.order_date;
-      const sales = parseFloat(String(order.order_unit_price)) * order.quantity;
+      // Calculate total sales for this order from all products
+      const orderSales = (order.products || []).reduce((sum, product) => 
+        sum + (product.order_unit_price * product.quantity), 0
+      );
       
       if (salesTrendMap.has(date)) {
         const existing = salesTrendMap.get(date)!;
-        existing.sales += sales;
+        existing.sales += orderSales;
         existing.orders += 1;
       } else {
-        salesTrendMap.set(date, { date, sales, orders: 1 });
+        salesTrendMap.set(date, { date, sales: orderSales, orders: 1 });
       }
     });
     
@@ -267,24 +313,28 @@ const Reports: React.FC = () => {
     const perDateProductSales = new Map<string, Map<string, number>>(); // date -> (product -> sales)
     
     orders.forEach(order => {
-      const product = order.product_name;
-      const sales = parseFloat(String(order.order_unit_price)) * order.quantity;
       const dateKey = order.order_date;
       
-      if (productSalesMap.has(product)) {
-        const existing = productSalesMap.get(product)!;
-        existing.sales += sales;
-        existing.orders += 1;
-      } else {
-        productSalesMap.set(product, { product, sales, orders: 1 });
-      }
+      // Process each product in the order
+      (order.products || []).forEach(product => {
+        const productName = product.product_name;
+        const sales = product.order_unit_price * product.quantity;
+        
+        if (productSalesMap.has(productName)) {
+          const existing = productSalesMap.get(productName)!;
+          existing.sales += sales;
+          existing.orders += 1;
+        } else {
+          productSalesMap.set(productName, { product: productName, sales, orders: 1 });
+        }
 
-      // accumulate per-date for series
-      if (!perDateProductSales.has(dateKey)) {
-        perDateProductSales.set(dateKey, new Map<string, number>());
-      }
-      const mapForDate = perDateProductSales.get(dateKey)!;
-      mapForDate.set(product, (mapForDate.get(product) || 0) + sales);
+        // accumulate per-date for series
+        if (!perDateProductSales.has(dateKey)) {
+          perDateProductSales.set(dateKey, new Map<string, number>());
+        }
+        const mapForDate = perDateProductSales.get(dateKey)!;
+        mapForDate.set(productName, (mapForDate.get(productName) || 0) + sales);
+      });
     });
     
     const productSales = Array.from(productSalesMap.values())
@@ -382,12 +432,6 @@ const Reports: React.FC = () => {
     setQuickFilter('Monthly');
   };
 
-  // Helper function to check if an order is discounted
-  const isOrderDiscounted = (order: Order): boolean => {
-    const orderUnitPrice = parseFloat(String(order.order_unit_price));
-    const currentBasePrice = parseFloat(String(order.base_price));
-    return orderUnitPrice < currentBasePrice;
-  };
 
   return (
     <div className="flex h-full bg-white">
@@ -665,7 +709,37 @@ const Reports: React.FC = () => {
             {/* Report Breakdown Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">{t('report_breakdown')}</h2>
+                <div className="flex items-center space-x-4">
+                  <h2 className="text-lg font-semibold text-gray-900">{t('report_breakdown')}</h2>
+                  
+                  {/* Breakdown View Toggle */}
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-medium text-gray-700">View:</span>
+                    <div className="flex bg-gray-100 rounded-lg p-1">
+                      <button
+                        onClick={() => setBreakdownView('daily')}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                          breakdownView === 'daily'
+                            ? 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Daily Breakdown
+                      </button>
+                      <button
+                        onClick={() => setBreakdownView('product')}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                          breakdownView === 'product'
+                            ? 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-900'
+                        }`}
+                      >
+                        Product Summary
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
                 <div className="flex space-x-2">
                   <button
                     onClick={handleExportPDF}
@@ -695,7 +769,9 @@ const Reports: React.FC = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('date')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {breakdownView === 'daily' ? t('date') : 'Period'}
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('product_type_col')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('orders_col')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('quantity_col')}</th>
@@ -721,7 +797,10 @@ const Reports: React.FC = () => {
                       reportData.map((row, index) => (
                         <tr key={index} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(row.date).toLocaleDateString()}
+                            {breakdownView === 'daily' 
+                              ? new Date(row.date).toLocaleDateString()
+                              : row.date
+                            }
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {row.productType}
@@ -793,19 +872,10 @@ const Reports: React.FC = () => {
                         Customer
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Product
+                        Products
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Quantity
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order Price
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Current Price
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total
+                        Order Total
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
@@ -818,59 +888,70 @@ const Reports: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredOrders.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
                           No orders found for the selected filters
                         </td>
                       </tr>
                     ) : (
-                      filteredOrders.map((order) => (
-                        <tr key={order.order_id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            #{order.order_id}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {order.customer_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            <div className="flex items-center space-x-2">
-                              <span>{order.product_name}</span>
-                              {isOrderDiscounted(order) && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                  Discounted
-                                </span>
+                      filteredOrders.map((order) => {
+                        const orderTotal = (order.products || []).reduce((sum, product) => 
+                          sum + (product.order_unit_price * product.quantity), 0
+                        );
+                        
+                        return (
+                          <tr key={order.order_id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              #{order.order_id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {order.customer_name}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-600">
+                              {order.products && order.products.length > 0 ? (
+                                <div className="space-y-1">
+                                  {order.products.map((product, idx) => (
+                                    <div key={idx} className="flex items-center space-x-2">
+                                      <span className="font-medium">{product.product_name}</span>
+                                      <span className="text-gray-500">×{product.quantity}</span>
+                                      {product.is_custom_size && (
+                                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                                          {product.length}×{product.width}×{product.height}
+                                        </span>
+                                      )}
+                                      {(product.order_unit_price < product.base_price - 0.01) && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                          Disc
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">No products</span>
                               )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {order.quantity}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            ETB {parseFloat(String(order.order_unit_price)).toFixed(2)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            ETB {parseFloat(String(order.base_price)).toFixed(2)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            ETB {(parseFloat(String(order.order_unit_price)) * order.quantity).toFixed(2)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              order.status === 'Completed' || order.status === 'Delivered' 
-                                ? 'bg-green-100 text-green-800'
-                                : order.status === 'In Progress'
-                                ? 'bg-blue-100 text-blue-800'
-                                : order.status === 'Pending'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {order.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {new Date(order.order_date).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {formatCurrency(orderTotal)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                order.status === 'Completed' || order.status === 'Delivered' 
+                                  ? 'bg-green-100 text-green-800'
+                                  : order.status === 'In Progress'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : order.status === 'Pending'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {order.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {new Date(order.order_date).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

@@ -13,21 +13,27 @@ interface Customer {
   address: string;
 }
 
+interface OrderProduct {
+  product_id: number;
+  product_name: string;
+  standard_size: string;
+  base_price: number;
+  order_unit_price: number;
+  quantity: number;
+  is_custom_size: boolean;
+  length?: number;
+  width?: number;
+  height?: number;
+  amount_per_unit?: number;
+}
+
 interface Order {
   order_id: number;
   customer_id: number;
   customer_name: string;
   customer_phone: string;
   customer_address: string;
-  product_name: string;
-  standard_size: string;
-  base_price: string | number;
-  order_unit_price: string | number;
-  quantity: number;
-  is_custom_size: boolean;
-  length?: number;
-  width?: number;
-  height?: number;
+  products: OrderProduct[];
   status: string;
   order_date: string;
   delivery_date: string;
@@ -35,6 +41,17 @@ interface Order {
   payment_status?: string;
   total_paid?: number;
   outstanding?: number;
+  order_total?: number;
+  // Legacy fields (first product) for backward compatibility
+  product_name?: string;
+  standard_size?: string;
+  base_price?: number;
+  order_unit_price?: number;
+  quantity?: number;
+  is_custom_size?: boolean;
+  length?: number;
+  width?: number;
+  height?: number;
 }
 
 interface Payment {
@@ -56,7 +73,6 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
   const [error, setError] = useState<string | null>(null);
   const [searchSuggestions, setSearchSuggestions] = useState<Customer[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [customersWithOrderCounts, setCustomersWithOrderCounts] = useState<any[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
@@ -69,7 +85,6 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
       setLoadingCustomers(true);
       const response = await customersAPI.getAll();
       const customers = response.data;
-      setAllCustomers(customers);
 
       // Get order counts for each customer
       const customersWithCounts = await Promise.all(
@@ -142,21 +157,39 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
       const ordersWithPaymentStatus = await Promise.all(
         orders.map(async (order: Order) => {
           try {
-            const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
+            const [paymentSummary, paymentsResponse] = await Promise.all([
+              paymentsAPI.getOrderSummary(order.order_id),
+              paymentsAPI.getByOrder(order.order_id)
+            ]);
             const paymentData = paymentSummary.data.payment_summary;
+            const payments = paymentsResponse.data || [];
             
+            // Calculate total from all products
+            const orderTotal = (order.products || []).reduce((sum, p) => 
+              sum + (p.order_unit_price * p.quantity), 0
+            );
+            const totalPaid = parseFloat(String(paymentData.total_paid || 0));
+            const outstanding = Math.max(0, orderTotal - totalPaid);
             return {
               ...order,
               payment_status: paymentData.payment_status,
-              total_paid: paymentData.total_paid,
-              outstanding: paymentData.outstanding,
+              total_paid: totalPaid,
+              outstanding: outstanding,
+              order_total: orderTotal,
+              payments: payments,
             } as Order;
           } catch (err) {
+            // Calculate total from all products
+            const orderTotal = (order.products || []).reduce((sum, p) => 
+              sum + (p.order_unit_price * p.quantity), 0
+            );
             return {
               ...order,
               payment_status: 'Unpaid',
               total_paid: 0,
-              outstanding: Number(order.order_unit_price) * order.quantity,
+              outstanding: orderTotal,
+              order_total: orderTotal,
+              payments: [],
             } as Order;
           }
         })
@@ -306,14 +339,12 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Order ID</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Product</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Specifications</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Products</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Payment</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Total (ETB)</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Advance Payment</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Total (ETB)</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Paid</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -336,21 +367,37 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                       activeOrders.map((order) => (
                         <tr key={order.order_id} className="border-t border-gray-200 hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-600">#{order.order_id}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{order.product_name}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {order.is_custom_size 
-                              ? `${order.length}×${order.width}×${order.height}` 
-                              : order.standard_size
-                            }
+                            {order.products && order.products.length > 0 ? (
+                              <div className="space-y-1">
+                                {order.products.map((prod, idx) => (
+                                  <div key={idx} className="flex items-center space-x-2">
+                                    <span className="font-medium">{prod.product_name}</span>
+                                    <span className="text-gray-500">×{prod.quantity}</span>
+                                    {prod.is_custom_size && (
+                                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                                        {prod.length}×{prod.width}×{prod.height}
+                                      </span>
+                                    )}
+                                    {(parseFloat(String(prod.order_unit_price)) < parseFloat(String(prod.base_price)) - 0.01) && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                        Disc
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">No products</span>
+                            )}
                           </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600">{order.payment_status || 'Unpaid'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{order.quantity.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(Number(order.order_unit_price) * order.quantity)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(order.order_total || 0)}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             {order.total_paid && order.total_paid > 0 ? formatCurrency(order.total_paid) : '-'}
                           </td>
@@ -363,7 +410,7 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                               <span>Details</span>
                             </button>
                           </td>
-                    </tr>
+                        </tr>
                       ))
                     )}
                 </tbody>
@@ -378,13 +425,11 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Order ID</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Product</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Specifications</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Products</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Status</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Payment</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Total (ETB)</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Total (ETB)</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -398,21 +443,37 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                       pastOrders.map((order) => (
                         <tr key={order.order_id} className="border-t border-gray-200 hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-600">#{order.order_id}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{order.product_name}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">
-                            {order.is_custom_size 
-                              ? `${order.length}×${order.width}×${order.height}` 
-                              : order.standard_size
-                            }
+                            {order.products && order.products.length > 0 ? (
+                              <div className="space-y-1">
+                                {order.products.map((prod, idx) => (
+                                  <div key={idx} className="flex items-center space-x-2">
+                                    <span className="font-medium">{prod.product_name}</span>
+                                    <span className="text-gray-500">×{prod.quantity}</span>
+                                    {prod.is_custom_size && (
+                                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                                        {prod.length}×{prod.width}×{prod.height}
+                                      </span>
+                                    )}
+                                    {(parseFloat(String(prod.order_unit_price)) < parseFloat(String(prod.base_price)) - 0.01) && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                        Disc
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">No products</span>
+                            )}
                           </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600">{order.payment_status || 'Unpaid'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{order.quantity.toLocaleString()}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(Number(order.order_unit_price) * order.quantity)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{formatCurrency(order.order_total || 0)}</td>
                           <td className="px-4 py-3 text-sm">
                             <button
                               onClick={() => handleViewDetails(order)}
@@ -422,7 +483,7 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                               <span>Details</span>
                             </button>
                           </td>
-                    </tr>
+                        </tr>
                       ))
                     )}
                 </tbody>
@@ -584,35 +645,10 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
               {/* Order Information */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Order Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Order ID</label>
                     <p className="mt-1 text-sm text-gray-600">#{selectedOrder.order_id}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Product</label>
-                    <p className="mt-1 text-sm text-gray-600">{selectedOrder.product_name}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Specifications</label>
-                    <p className="mt-1 text-sm text-gray-600">
-                      {selectedOrder.is_custom_size 
-                        ? `${selectedOrder.length}×${selectedOrder.width}×${selectedOrder.height}` 
-                        : selectedOrder.standard_size
-                      }
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                    <p className="mt-1 text-sm text-gray-600">{selectedOrder.quantity.toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Unit Price</label>
-                    <p className="mt-1 text-sm text-gray-600">{formatCurrency(Number(selectedOrder.order_unit_price))}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Total Amount</label>
-                    <p className="mt-1 text-sm text-gray-600">{formatCurrency(Number(selectedOrder.order_unit_price) * selectedOrder.quantity)}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
@@ -629,12 +665,72 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                     <p className="mt-1 text-sm text-gray-600">{new Date(selectedOrder.delivery_date).toLocaleDateString()}</p>
                   </div>
                 </div>
+
+                {/* Products List */}
+                <div className="mb-6">
+                  <h4 className="text-md font-medium text-gray-900 mb-3">Products</h4>
+                  {selectedOrder.products && selectedOrder.products.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedOrder.products.map((product, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Product</label>
+                              <p className="mt-1 text-sm text-gray-600">{product.product_name}</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Specifications</label>
+                              <p className="mt-1 text-sm text-gray-600">
+                                {product.is_custom_size 
+                                  ? `${product.length}×${product.width}×${product.height}` 
+                                  : product.standard_size
+                                }
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                              <p className="mt-1 text-sm text-gray-600">{product.quantity.toLocaleString()}</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Unit Price</label>
+                              <p className="mt-1 text-sm text-gray-600">{formatCurrency(product.order_unit_price)}</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Total Amount</label>
+                              <p className="mt-1 text-sm text-gray-600 font-medium">{formatCurrency(product.order_unit_price * product.quantity)}</p>
+                            </div>
+                            {product.is_custom_size && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Custom Size</label>
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mt-1">
+                                  Custom
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm">No products found</p>
+                  )}
+                </div>
+
+                {/* Order Total */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-medium text-gray-900">Order Total:</span>
+                    <span className="text-xl font-bold text-gray-900">{formatCurrency(selectedOrder.order_total || 0)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Payment Information */}
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Payment Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Payment Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Payment Status</label>
                     <p className="mt-1 text-sm text-gray-600">{selectedOrder.payment_status || 'Unpaid'}</p>
@@ -648,6 +744,49 @@ const CustomerHistory: React.FC<CustomerHistoryProps> = ({ onBackToDashboard }) 
                     <p className="mt-1 text-sm text-gray-600">{formatCurrency(selectedOrder.outstanding || 0)}</p>
                   </div>
                 </div>
+
+                {/* Payment Details */}
+                {selectedOrder.payments && selectedOrder.payments.length > 0 ? (
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3">Payment History</h4>
+                    <div className="space-y-3">
+                      {selectedOrder.payments.map((payment, index) => (
+                        <div key={payment.payment_id} className="border border-gray-200 rounded-lg p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Payment Type</label>
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full mt-1 ${
+                                payment.type === 'Advance' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                {payment.type}
+                              </span>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Amount</label>
+                              <p className="mt-1 text-sm text-gray-600 font-medium">{formatCurrency(payment.amount)}</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Payment Date</label>
+                              <p className="mt-1 text-sm text-gray-600">{new Date(payment.payment_date).toLocaleDateString()}</p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Reference Number</label>
+                              <p className="mt-1 text-sm text-gray-600 font-mono bg-gray-50 px-2 py-1 rounded">
+                                {payment.reference_number || 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 text-sm">No payments recorded for this order</p>
+                  </div>
+                )}
               </div>
             </div>
 

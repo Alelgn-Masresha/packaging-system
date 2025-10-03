@@ -333,4 +333,111 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Add stock to product
+router.post('/:id/stock', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { quantity } = req.body;
+    
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Quantity must be a positive number'
+      });
+    }
+    
+    await client.query('BEGIN');
+    
+    // Check if product exists
+    const productCheck = await client.query('SELECT product_id FROM products WHERE product_id = $1', [id]);
+    if (productCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        error: 'Product not found'
+      });
+    }
+    
+    // Get product materials and calculate requirements
+    const materialsRes = await client.query(`
+      SELECT pm.material_id, pm.amount_per_unit, rm.material_name, rm.current_stock, rm.unit
+      FROM product_materials pm
+      JOIN raw_materials rm ON rm.material_id = pm.material_id
+      WHERE pm.product_id = $1
+    `, [id]);
+    
+    if (materialsRes.rows.length === 0) {
+      // Product has no material requirements, just add stock
+      await client.query('UPDATE products SET stock_quantity = stock_quantity + $1 WHERE product_id = $2', [quantity, id]);
+      await client.query('COMMIT');
+      
+      return res.json({
+        success: true,
+        message: 'Stock added successfully'
+      });
+    }
+    
+    // Calculate material requirements
+    const requirements = materialsRes.rows.map(row => {
+      const totalReq = parseFloat(row.amount_per_unit) * parseInt(quantity);
+      const current = parseFloat(row.current_stock);
+      return {
+        material_id: row.material_id,
+        material_name: row.material_name,
+        current_stock: current,
+        unit: row.unit,
+        amount_per_unit: parseFloat(row.amount_per_unit),
+        total_required: totalReq,
+        sufficient: current >= totalReq
+      };
+    });
+    
+    // Check if we have sufficient materials
+    const insufficientMaterials = requirements.filter(req => !req.sufficient);
+    if (insufficientMaterials.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: 'Insufficient raw materials',
+        details: insufficientMaterials.map(m => ({
+          material: m.material_name,
+          required: m.total_required,
+          available: m.current_stock,
+          unit: m.unit
+        }))
+      });
+    }
+    
+    // Subtract materials from stock
+    for (const req of requirements) {
+      await client.query(
+        'UPDATE raw_materials SET current_stock = current_stock - $1 WHERE material_id = $2',
+        [req.total_required, req.material_id]
+      );
+    }
+    
+    // Add stock to product
+    await client.query('UPDATE products SET stock_quantity = stock_quantity + $1 WHERE product_id = $2', [quantity, id]);
+    
+    await client.query('COMMIT');
+    
+    res.json({
+      success: true,
+      message: 'Stock added successfully'
+    });
+    
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error adding stock:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to add stock',
+      message: err.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

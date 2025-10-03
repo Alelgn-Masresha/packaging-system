@@ -3,11 +3,8 @@ import { X, Filter, Loader2 } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { ordersAPI, paymentsAPI } from '../services/api';
 
-interface Order {
-  order_id: number;
-  customer_name: string;
-  customer_phone: string;
-  customer_address: string;
+interface OrderProduct {
+  product_id: number;
   product_name: string;
   standard_size: string;
   base_price: number;
@@ -17,24 +14,36 @@ interface Order {
   length?: number;
   width?: number;
   height?: number;
+  amount_per_unit?: number;
+}
+
+interface Order {
+  order_id: number;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
   status: string;
   order_date: string;
   delivery_date: string;
-  payments?: Payment[];
+  products: OrderProduct[];
+  // Legacy fields (first product)
+  product_name?: string;
+  standard_size?: string;
+  base_price?: number;
+  order_unit_price?: number;
+  quantity?: number;
+  is_custom_size?: boolean;
+  length?: number;
+  width?: number;
+  height?: number;
 }
 
-interface Payment {
-  payment_id: number;
-  amount: number;
-  payment_date: string;
-  reference_number?: string;
-  type: 'Advance' | 'Final';
-}
 
 interface OrderWithPaymentStatus extends Order {
   payment_status: string;
   total_paid: number;
   outstanding: number;
+  order_total: number;
 }
 
 const TrackOrders: React.FC = () => {
@@ -44,12 +53,15 @@ const TrackOrders: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  
   const [selectedOrder, setSelectedOrder] = useState<OrderWithPaymentStatus | null>(null);
   const [newStatus, setNewStatus] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentType, setPaymentType] = useState('Advance');
   const [referenceNumber, setReferenceNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  
+  
   
   // Filter states
   const [statusFilter, setStatusFilter] = useState('All');
@@ -79,13 +91,15 @@ const TrackOrders: React.FC = () => {
             const paymentSummary = await paymentsAPI.getOrderSummary(order.order_id);
             const paymentData = paymentSummary.data.payment_summary;
 
-            // Recalculate totals using order_unit_price to honor discounts
-            const totalDue = order.order_unit_price * order.quantity;
+            // Calculate total from all products
+            const orderTotal = (order.products || []).reduce((sum, p) => 
+              sum + (p.order_unit_price * p.quantity), 0
+            );
             const totalPaid = parseFloat(String(paymentData.total_paid || 0));
-            const outstanding = Math.max(0, totalDue - totalPaid);
+            const outstanding = Math.max(0, orderTotal - totalPaid);
             const paymentStatus = totalPaid <= 0
               ? 'Unpaid'
-              : totalPaid >= totalDue
+              : totalPaid >= orderTotal
               ? 'Paid'
               : 'Partial';
 
@@ -94,14 +108,19 @@ const TrackOrders: React.FC = () => {
               payment_status: paymentStatus,
               total_paid: totalPaid,
               outstanding,
+              order_total: orderTotal,
             } as OrderWithPaymentStatus;
           } catch (err) {
             // If no payments found, set default values
+            const orderTotal = (order.products || []).reduce((sum, p) => 
+              sum + (p.order_unit_price * p.quantity), 0
+            );
             return {
               ...order,
               payment_status: 'Unpaid',
               total_paid: 0,
-              outstanding: order.order_unit_price * order.quantity,
+              outstanding: orderTotal,
+              order_total: orderTotal,
             } as OrderWithPaymentStatus;
           }
         })
@@ -166,6 +185,12 @@ const TrackOrders: React.FC = () => {
   const handleStatusUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedOrder && newStatus) {
+      // Prevent changing to "Delivered" if payment status is "Partial"
+      if (newStatus === 'Delivered' && selectedOrder.payment_status === 'Partial') {
+        setError('Not fully paid');
+        return;
+      }
+      
       try {
         setSubmitting(true);
         setError(null);
@@ -212,6 +237,8 @@ const TrackOrders: React.FC = () => {
     }
   };
 
+  
+
   const applyFilters = (ordersToFilter: OrderWithPaymentStatus[], status: string, deliveryDate: string) => {
     let filtered = ordersToFilter;
 
@@ -244,10 +271,6 @@ const TrackOrders: React.FC = () => {
     setFilteredOrders(orders);
   };
 
-  // Helper function to check if an order is discounted
-  const isOrderDiscounted = (order: OrderWithPaymentStatus): boolean => {
-    return order.order_unit_price < order.base_price;
-  };
 
   return (
     <div className="space-y-6">
@@ -315,19 +338,19 @@ const TrackOrders: React.FC = () => {
                   Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product
+                  Products
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Quantity
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Size
+                  Order Total
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Payment
+                  Payment Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Paid / Outstanding
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Delivery Date
@@ -361,54 +384,66 @@ const TrackOrders: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {order.customer_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      <div className="flex items-center space-x-2">
-                        <span>{order.product_name}</span>
-                        {isOrderDiscounted(order) && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            Discounted
-                          </span>
-                        )}
-                      </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.quantity}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {order.is_custom_size 
-                        ? `${order.length}×${order.width}×${order.height}` 
-                        : order.standard_size
-                      }
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {order.products && order.products.length > 0 ? (
+                        <div className="space-y-1">
+                          {order.products.map((prod, idx) => (
+                            <div key={idx} className="flex items-center space-x-2">
+                              <span className="font-medium">{prod.product_name}</span>
+                              <span className="text-gray-500">×{prod.quantity}</span>
+                              {prod.is_custom_size && (
+                                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                                  {prod.length}×{prod.width}×{prod.height}
+                                </span>
+                              )}
+                              {(parseFloat(String(prod.order_unit_price)) < parseFloat(String(prod.base_price)) - 0.01) && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  Disc
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">No products</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      ETB {order.order_total.toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                      {order.status === 'Pending' ? t('status_pending')
-                        : order.status === 'In Progress' ? t('status_in_progress')
-                        : order.status === 'Completed' ? t('status_completed')
-                        : order.status === 'Delivered' ? t('status_delivered')
-                        : order.status === 'Cancelled' ? t('status_cancelled')
-                        : order.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                        {order.status === 'Pending' ? t('status_pending')
+                          : order.status === 'In Progress' ? t('status_in_progress')
+                          : order.status === 'Completed' ? t('status_completed')
+                          : order.status === 'Delivered' ? t('status_delivered')
+                          : order.status === 'Cancelled' ? t('status_cancelled')
+                          : order.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPaymentColor(order.payment_status)}`}>
                         {order.payment_status === 'Paid' ? t('payment_paid')
                           : order.payment_status === 'Partial' ? t('payment_partial')
                           : order.payment_status === 'Unpaid' ? t('payment_unpaid')
                           : order.payment_status}
-                    </span>
-                  </td>
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      <div>ETB {order.total_paid.toFixed(2)}</div>
+                      <div className="text-xs text-red-600">ETB {order.outstanding.toFixed(2)}</div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {new Date(order.delivery_date).toLocaleDateString()}
                     </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                       <button 
                         onClick={() => handleUpdateStatus(order)}
                         className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition-colors"
                       >
-                      Update Status
-                    </button>
+                        Update Status
+                      </button>
                       <button 
                         onClick={() => handleRecordPayment(order)}
                         disabled={order.payment_status === 'Paid'}
@@ -418,10 +453,11 @@ const TrackOrders: React.FC = () => {
                             : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                         }`}
                       >
-                      Record Payment
-                    </button>
-                  </td>
-                </tr>
+                        Record Payment
+                      </button>
+                      
+                    </td>
+                  </tr>
                 ))
               )}
             </tbody>
@@ -448,6 +484,16 @@ const TrackOrders: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Order: #{selectedOrder?.order_id} - {selectedOrder?.customer_name}
                 </label>
+                
+                {/* Payment Status Warning */}
+                {selectedOrder?.payment_status === 'Partial' && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-800">
+                      <strong>Warning:</strong> This order is not fully paid. Cannot change status to "Delivered" until payment is complete.
+                    </p>
+                  </div>
+                )}
+                
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   New Status
                 </label>
@@ -460,7 +506,12 @@ const TrackOrders: React.FC = () => {
                   <option value="Pending">Pending</option>
                   <option value="In Progress">In Progress</option>
                   <option value="Completed">Completed</option>
-                  <option value="Delivered">Delivered</option>
+                  <option 
+                    value="Delivered" 
+                    disabled={selectedOrder?.payment_status === 'Partial'}
+                  >
+                    Delivered{selectedOrder?.payment_status === 'Partial' ? ' (Not fully paid)' : ''}
+                  </option>
                   <option value="Cancelled">Cancelled</option>
                 </select>
               </div>
@@ -507,10 +558,35 @@ const TrackOrders: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Order: #{selectedOrder?.order_id} - {selectedOrder?.customer_name}
                 </label>
-                <div className="text-sm text-gray-600">
-                  <p>Total Order Value: ETB {(selectedOrder?.order_unit_price || 0) * (selectedOrder?.quantity || 0)}</p>
-                  <p>Total Paid: ETB {selectedOrder?.total_paid || 0}</p>
-                  <p>Outstanding: ETB {selectedOrder?.outstanding || 0}</p>
+                
+                {/* Order Products Summary */}
+                {selectedOrder?.products && selectedOrder.products.length > 0 && (
+                  <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="text-xs font-medium text-gray-700 mb-2">Order Items:</div>
+                    <div className="space-y-1">
+                      {selectedOrder.products.map((prod, idx) => (
+                        <div key={idx} className="flex justify-between text-xs text-gray-600">
+                          <span>{prod.product_name} ×{prod.quantity}</span>
+                          <span>ETB {(prod.order_unit_price * prod.quantity).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="text-sm text-gray-600 space-y-1 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                  <div className="flex justify-between">
+                    <span className="font-medium">Total Order Value:</span>
+                    <span className="font-bold">ETB {selectedOrder?.order_total.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between text-green-700">
+                    <span>Total Paid:</span>
+                    <span>ETB {selectedOrder?.total_paid.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between text-red-700 font-medium">
+                    <span>Outstanding:</span>
+                    <span>ETB {selectedOrder?.outstanding.toFixed(2) || '0.00'}</span>
+                  </div>
                 </div>
               </div>
 
@@ -609,6 +685,8 @@ const TrackOrders: React.FC = () => {
           </div>
         </div>
       )}
+
+      
     </div>
   );
 };

@@ -18,10 +18,14 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+const allowedOrigins = process.env.FRONTEND_URL 
+    ? [process.env.FRONTEND_URL] 
+    : ["http://localhost:5173"];
+
 app.use(cors({
-  origin: ["http://localhost:5173", "https://packaging-system.vercel.app"],
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  credentials: true,
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));

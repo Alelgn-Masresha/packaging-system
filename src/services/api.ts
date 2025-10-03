@@ -69,6 +69,7 @@ export const productsAPI: any = {
   create: (productData: any) => apiService.post('/products', productData),
   update: (id: number, productData: any) => apiService.put(`/products/${id}`, productData),
   delete: (id: number) => apiService.delete(`/products/${id}`),
+  addStock: (id: number, quantity: number) => apiService.post(`/products/${id}/stock`, { quantity }),
 };
 
 export const ordersAPI: any = {
@@ -78,6 +79,7 @@ export const ordersAPI: any = {
   getByStatus: (status: string) => apiService.get(`/orders/status/${status}`),
   create: (orderData: any) => apiService.post('/orders', orderData),
   update: (id: number, orderData: any) => apiService.put(`/orders/${id}`, orderData),
+  updateProducts: (id: number, orderData: any) => apiService.put(`/orders/${id}/products`, orderData),
   updateStatus: (id: number, status: string) => apiService.put(`/orders/${id}/status`, { status }),
   delete: (id: number) => apiService.delete(`/orders/${id}`),
 };

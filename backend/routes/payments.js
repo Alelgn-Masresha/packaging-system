@@ -12,12 +12,10 @@ router.get('/', async (req, res) => {
         o.delivery_date,
         o.status as order_status,
         c.name as customer_name,
-        c.phone as customer_phone,
-        pr.name as product_name
+        c.phone as customer_phone
       FROM payments p
       JOIN orders o ON p.order_id = o.order_id
       JOIN customers c ON o.customer_id = c.customer_id
-      JOIN products pr ON o.product_id = pr.product_id
       ORDER BY p.payment_date DESC
     `);
     
@@ -47,12 +45,10 @@ router.get('/order/:orderId', async (req, res) => {
         o.delivery_date,
         o.status as order_status,
         c.name as customer_name,
-        c.phone as customer_phone,
-        pr.name as product_name
+        c.phone as customer_phone
       FROM payments p
       JOIN orders o ON p.order_id = o.order_id
       JOIN customers c ON o.customer_id = c.customer_id
-      JOIN products pr ON o.product_id = pr.product_id
       WHERE p.order_id = $1
       ORDER BY p.payment_date DESC
     `, [orderId]);
@@ -84,12 +80,10 @@ router.get('/:id', async (req, res) => {
         o.delivery_date,
         o.status as order_status,
         c.name as customer_name,
-        c.phone as customer_phone,
-        pr.name as product_name
+        c.phone as customer_phone
       FROM payments p
       JOIN orders o ON p.order_id = o.order_id
       JOIN customers c ON o.customer_id = c.customer_id
-      JOIN products pr ON o.product_id = pr.product_id
       WHERE p.payment_id = $1
     `, [id]);
     
@@ -361,12 +355,9 @@ router.get('/order/:orderId/summary', async (req, res) => {
     const orderResult = await pool.query(`
       SELECT 
         o.*,
-        c.name as customer_name,
-        pr.name as product_name,
-        pr.base_price
+        c.name as customer_name
       FROM orders o
       JOIN customers c ON o.customer_id = c.customer_id
-      JOIN products pr ON o.product_id = pr.product_id
       WHERE o.order_id = $1
     `, [orderId]);
     
@@ -376,6 +367,17 @@ router.get('/order/:orderId/summary', async (req, res) => {
         error: 'Order not found'
       });
     }
+    
+    // Get order products and calculate total from order_products table
+    const productsResult = await pool.query(`
+      SELECT op.quantity, op.order_unit_price
+      FROM order_products op
+      WHERE op.order_id = $1
+    `, [orderId]);
+    
+    const totalOrderValue = productsResult.rows.reduce((sum, p) => 
+      sum + (parseFloat(p.order_unit_price) * parseInt(p.quantity)), 0
+    );
     
     // Get payment summary
     const paymentResult = await pool.query(`
@@ -395,7 +397,6 @@ router.get('/order/:orderId/summary', async (req, res) => {
     );
     
     const order = orderResult.rows[0];
-    const totalOrderValue = order.base_price * order.quantity;
     
     // Calculate payment summary
     let totalPaid = 0;
@@ -411,7 +412,7 @@ router.get('/order/:orderId/summary', async (req, res) => {
       }
     });
     
-    const outstanding = totalOrderValue - totalPaid;
+    const outstanding = Math.max(0, totalOrderValue - totalPaid);
     
     res.json({
       success: true,

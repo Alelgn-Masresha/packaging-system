@@ -368,7 +368,7 @@ const InventoryManagement: React.FC = () => {
         {/* Header */}
         <div className="bg-green-600 rounded-lg p-6 mb-6 relative">
           <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4">
               <div>
               <h1 className="text-2xl font-bold text-white">{t('raw_materials_inventory')}</h1>
                 <div className="flex items-center space-x-2 mt-1">

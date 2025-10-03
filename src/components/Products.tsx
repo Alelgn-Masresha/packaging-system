@@ -7,6 +7,7 @@ interface Product {
   name: string;
   standard_size: string;
   base_price: string | number;
+  stock_quantity?: number;
   raw_material_id?: number;
   amount_per_unit?: number;
   materials?: { raw_material_id: number; amount_per_unit: number }[];
@@ -24,7 +25,10 @@ const Products: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showStockModal, setShowStockModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [stockQuantity, setStockQuantity] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     standard_size: '',
@@ -113,6 +117,35 @@ const Products: React.FC = () => {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete product');
       }
+    }
+  };
+
+  const handleAddStock = (product: Product) => {
+    setSelectedProduct(product);
+    setStockQuantity('');
+    setShowStockModal(true);
+  };
+
+  const handleStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProduct || !stockQuantity) return;
+
+    try {
+      setSubmitting(true);
+      setError(null);
+      
+      await productsAPI.addStock(selectedProduct.product_id, parseInt(stockQuantity));
+      
+      // Reload products to get updated stock quantities
+      await loadProducts();
+      
+      setShowStockModal(false);
+      setSelectedProduct(null);
+      setStockQuantity('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add stock');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -210,6 +243,9 @@ const Products: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Base Price
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Stock Quantity
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Raw Materials</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -219,7 +255,7 @@ const Products: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center">
+                  <td colSpan={8} className="px-6 py-8 text-center">
                     <div className="flex items-center justify-center space-x-2">
                       <Loader2 className="w-5 h-5 animate-spin text-green-600" />
                       <span className="text-gray-600">Loading products...</span>
@@ -228,7 +264,7 @@ const Products: React.FC = () => {
                 </tr>
               ) : products.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                     No products found
                   </td>
                 </tr>
@@ -246,6 +282,18 @@ const Products: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       ETB {Number(product.base_price).toFixed(2)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">{product.stock_quantity || 0}</span>
+                        <button
+                          onClick={() => handleAddStock(product)}
+                          className="bg-green-600 text-white p-1 rounded hover:bg-green-700 transition-colors"
+                          title="Add Stock"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {(product.materials && product.materials.length > 0)
@@ -350,28 +398,28 @@ const Products: React.FC = () => {
                   {formData.materials.map((m, idx) => (
                     <div key={idx} className="grid grid-cols-5 gap-2 items-center">
                       <div className="col-span-3">
-                        <select
+                <select
                           value={m.raw_material_id}
                           onChange={(e) => {
                             const materials = [...formData.materials];
                             materials[idx] = { ...materials[idx], raw_material_id: e.target.value };
                             setFormData({ ...formData, materials });
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        >
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
                           <option value="">Select Raw Material</option>
-                          {rawMaterials.map((material) => (
-                            <option key={material.material_id} value={material.material_id}>
-                              {material.material_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                  {rawMaterials.map((material) => (
+                    <option key={material.material_id} value={material.material_id}>
+                      {material.material_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
                       <div className="col-span-2 relative">
-                        <input
-                          type="number"
-                          step="0.000001"
-                          min="0.000001"
+                  <input
+                    type="number"
+                    step="0.000001"
+                    min="0.000001"
                           value={m.amount_per_unit}
                           onChange={(e) => {
                             const materials = [...formData.materials];
@@ -381,10 +429,10 @@ const Products: React.FC = () => {
                           placeholder="Amount"
                           className="w-full pr-12 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                           required={!!m.raw_material_id}
-                        />
-                        <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                  />
+                  <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
                           {m.raw_material_id ? (rawMaterials.find(rm => rm.material_id === parseInt(m.raw_material_id))?.unit || '') : ''}
-                        </span>
+                  </span>
                       </div>
                       <div className="col-span-5 flex gap-2">
                         <button
@@ -421,6 +469,85 @@ const Products: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
+                  disabled={submitting}
+                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Stock Modal */}
+      {showStockModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Add Stock</h2>
+              <button
+                onClick={() => setShowStockModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStockSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Product: {selectedProduct?.name} - {selectedProduct?.standard_size}
+                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Stock: {selectedProduct?.stock_quantity || 0}
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quantity to Add
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={stockQuantity}
+                  onChange={(e) => setStockQuantity(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Enter quantity"
+                  required
+                />
+              </div>
+
+              {selectedProduct?.materials && selectedProduct.materials.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="text-sm font-medium text-blue-800 mb-2">Raw Materials Required:</div>
+                  <div className="space-y-1">
+                    {selectedProduct.materials.map((material, idx) => {
+                      const rm = rawMaterials.find(r => r.material_id === material.raw_material_id);
+                      const required = material.amount_per_unit * parseInt(stockQuantity || '0');
+                      return (
+                        <div key={idx} className="text-sm text-blue-700">
+                          {rm?.material_name || `Material #${material.raw_material_id}`}: {required} {rm?.unit || ''}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={submitting || !stockQuantity}
+                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Add Stock</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStockModal(false)}
                   disabled={submitting}
                   className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
                 >
