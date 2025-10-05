@@ -63,7 +63,7 @@ function App() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col mt-0 md:mt-20 md:ml-64">
+      <div className="flex-1 flex flex-col mt-0 mt-20 md:ml-64">
         <Header onMenuClick={() => setIsSidebarOpen(true)} />
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-auto md:pt-20">
           {renderView()}
