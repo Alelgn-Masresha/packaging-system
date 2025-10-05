@@ -210,7 +210,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const { t, tp, lang, setLang } = useI18n();
 
   return (
-    <header className="z-50 bg-white shadow-sm border-b border-gray-300 fixed md:left-64 md:right-0 md:top-0">
+    <header className="z-50 bg-white block shadow-sm border-b border-gray-300 fixed top-0 left-0 right-0 md:left-64 md:right-0">
+
       <div className="flex justify-between items-center px-4 md:px-8 py-3 md:py-4">
         <div className="flex items-center gap-3">
           <button
