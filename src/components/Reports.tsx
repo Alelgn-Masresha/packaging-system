@@ -492,8 +492,8 @@ const Reports: React.FC = () => {
         )}
 
         {/* Filters Section */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-2">
             <h2 className="text-lg font-semibold text-gray-900">{t('filters')}</h2>
             {loading && (
               <div className="flex items-center space-x-2 text-gray-600">
@@ -502,38 +502,38 @@ const Reports: React.FC = () => {
               </div>
             )}
           </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center space-x-2">
-              <label className="text-sm font-medium text-gray-700">{t('date_range')}:</label>
-            <div className="flex items-center space-x-2">
-              <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">{t('date_range')}:</label>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2">
+              <div className="relative w-full sm:w-auto">
                 <input
                   type="date"
                   value={dateFrom}
                   onChange={(e) => setDateFrom(e.target.value)}
-                  className="pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full sm:w-auto pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
                 <Calendar className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               </div>
-              <span className="text-gray-500">to</span>
-              <div className="relative">
+              <span className="text-gray-500 text-center sm:text-left">to</span>
+              <div className="relative w-full sm:w-auto">
                 <input
                   type="date"
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full sm:w-auto pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
                 <Calendar className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">{t('product_type')}:</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">{t('product_type')}:</label>
             <select
               value={productType}
               onChange={(e) => setProductType(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
               <option value="All">All Products</option>
               {products.map((product) => (
@@ -544,9 +544,9 @@ const Reports: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">{t('quick_filters')}:</label>
-            <div className="flex space-x-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">{t('quick_filters')}:</label>
+            <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
               <label className="flex items-center">
                 <input
                   type="radio"
@@ -554,7 +554,7 @@ const Reports: React.FC = () => {
                   value="Daily"
                   checked={quickFilter === 'Daily'}
                   onChange={(e) => handleQuickFilter(e.target.value)}
-                  className="mr-1"
+                  className="mr-2"
                 />
                 <span className="text-sm">{t('today')}</span>
               </label>
@@ -565,7 +565,7 @@ const Reports: React.FC = () => {
                   value="Weekly"
                   checked={quickFilter === 'Weekly'}
                   onChange={(e) => handleQuickFilter(e.target.value)}
-                  className="mr-1"
+                  className="mr-2"
                 />
                 <span className="text-sm">{t('this_week')}</span>
               </label>
@@ -576,18 +576,18 @@ const Reports: React.FC = () => {
                   value="Monthly"
                   checked={quickFilter === 'Monthly'}
                   onChange={(e) => handleQuickFilter(e.target.value)}
-                  className="mr-1"
+                  className="mr-2"
                 />
                 <span className="text-sm">{t('this_month')}</span>
               </label>
             </div>
           </div>
 
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 w-full sm:w-auto">
             <button
               onClick={handleClearFilters}
               disabled={loading}
-              className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="w-full sm:w-auto bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
             >
               <span>{t('clear_filters')}</span>
             </button>
@@ -598,9 +598,9 @@ const Reports: React.FC = () => {
         {activeSection === 'summary' && (
           <>
             {/* Sales Summary Section */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('sales_summary')}</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-green-900">{salesSummary.totalOrders}</div>
                   <div className="text-sm text-green-600">{t('total_orders')}</div>
@@ -633,9 +633,9 @@ const Reports: React.FC = () => {
             </div>
 
             {/* Sales Trend Chart */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('sales_trend')}</h2>
-              <div className="h-80">
+              <div className="h-64 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={salesTrendData}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -661,8 +661,8 @@ const Reports: React.FC = () => {
             </div>
 
             {/* Product Sales Chart (Top 5 over time as grouped bars) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('top_products_time')}</h2>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
@@ -680,7 +680,7 @@ const Reports: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('order_status_distribution')}</h2>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
@@ -708,17 +708,17 @@ const Reports: React.FC = () => {
 
             {/* Report Breakdown Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <div className="flex justify-between items-center p-6 border-b border-gray-200">
-                <div className="flex items-center space-x-4">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 sm:p-6 border-b border-gray-200 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                   <h2 className="text-lg font-semibold text-gray-900">{t('report_breakdown')}</h2>
                   
                   {/* Breakdown View Toggle */}
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                     <span className="text-sm font-medium text-gray-700">View:</span>
-                    <div className="flex bg-gray-100 rounded-lg p-1">
+                    <div className="flex bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
                       <button
                         onClick={() => setBreakdownView('daily')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                        className={`flex-1 sm:flex-none px-3 py-1 text-sm rounded-md transition-colors ${
                           breakdownView === 'daily'
                             ? 'bg-white text-gray-900 shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
@@ -728,7 +728,7 @@ const Reports: React.FC = () => {
                       </button>
                       <button
                         onClick={() => setBreakdownView('product')}
-                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                        className={`flex-1 sm:flex-none px-3 py-1 text-sm rounded-md transition-colors ${
                           breakdownView === 'product'
                             ? 'bg-white text-gray-900 shadow-sm'
                             : 'text-gray-600 hover:text-gray-900'
@@ -740,24 +740,24 @@ const Reports: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex space-x-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
                   <button
                     onClick={handleExportPDF}
-                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                    className="w-full sm:w-auto bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2"
                   >
                     <FileText className="w-4 h-4" />
                     <span>{t('export_pdf')}</span>
                   </button>
                   <button
                     onClick={handleExportExcel}
-                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                    className="w-full sm:w-auto bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2"
                   >
                     <Download className="w-4 h-4" />
                     <span>{t('export_excel')}</span>
                   </button>
                   <button
                     onClick={handlePrint}
-                    className="bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                    className="w-full sm:w-auto bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2"
                   >
                     <Printer className="w-4 h-4" />
                     <span>{t('print')}</span>
@@ -766,17 +766,17 @@ const Reports: React.FC = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[600px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {breakdownView === 'daily' ? t('date') : 'Period'}
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('product_type_col')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('orders_col')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('quantity_col')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales_col')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paid_col')}</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('product_type_col')}</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('orders_col')}</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('quantity_col')}</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales_col')}</th>
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paid_col')}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -796,25 +796,25 @@ const Reports: React.FC = () => {
                     ) : (
                       reportData.map((row, index) => (
                         <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
                             {breakdownView === 'daily' 
                               ? new Date(row.date).toLocaleDateString()
                               : row.date
                             }
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                             {row.productType}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                             {row.orders}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                             {row.quantity.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                             {formatCurrency(row.sales)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                             {formatCurrency(row.paid)}
                           </td>
                         </tr>
@@ -830,9 +830,9 @@ const Reports: React.FC = () => {
         {activeSection === 'individual' && (
           <>
             {/* Order Volume Chart */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">Order Volume Trend</h2>
-              <div className="h-80">
+              <div className="h-64 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={orderVolumeData}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -857,30 +857,30 @@ const Reports: React.FC = () => {
 
             {/* Individual Orders Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
+              <div className="p-4 sm:p-6 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-900">Individual Orders</h2>
                 <p className="text-sm text-gray-600 mt-1">Detailed view of all orders with pricing information</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="min-w-[800px] divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Order ID
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Customer
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Products
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Order Total
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Date
                       </th>
                     </tr>
@@ -900,26 +900,26 @@ const Reports: React.FC = () => {
                         
                         return (
                           <tr key={order.order_id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <td className="px-3 sm:px-6 py-4 text-sm font-medium text-gray-900">
                               #{order.order_id}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                               {order.customer_name}
                             </td>
-                            <td className="px-6 py-4 text-sm text-gray-600">
+                            <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                               {order.products && order.products.length > 0 ? (
                                 <div className="space-y-1">
                                   {order.products.map((product, idx) => (
-                                    <div key={idx} className="flex items-center space-x-2">
+                                    <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                                       <span className="font-medium">{product.product_name}</span>
                                       <span className="text-gray-500">×{product.quantity}</span>
                                       {product.is_custom_size && (
-                                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                                        <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded w-fit">
                                           {product.length}×{product.width}×{product.height}
                                         </span>
                                       )}
                                       {(product.order_unit_price < product.base_price - 0.01) && (
-                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 w-fit">
                                           Disc
                                         </span>
                                       )}
@@ -930,10 +930,10 @@ const Reports: React.FC = () => {
                                 <span className="text-gray-400">No products</span>
                               )}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <td className="px-3 sm:px-6 py-4 text-sm font-medium text-gray-900">
                               {formatCurrency(orderTotal)}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                            <td className="px-3 sm:px-6 py-4">
                               <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                                 order.status === 'Completed' || order.status === 'Delivered' 
                                   ? 'bg-green-100 text-green-800'
@@ -946,7 +946,7 @@ const Reports: React.FC = () => {
                                 {order.status}
                               </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                            <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">
                               {new Date(order.order_date).toLocaleDateString()}
                             </td>
                           </tr>

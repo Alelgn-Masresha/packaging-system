@@ -366,11 +366,11 @@ const InventoryManagement: React.FC = () => {
       {/* Main Inventory Panel */}
       <div className="flex-1 p-6">
         {/* Header */}
-        <div className="bg-green-600 rounded-lg p-6 mb-6 relative">
-          <div className="flex items-center justify-between">
+        <div className="bg-green-600 rounded-lg p-4 sm:p-6 mb-6 relative">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center space-x-4">
               <div>
-              <h1 className="text-2xl font-bold text-white">{t('raw_materials_inventory')}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-white">{t('raw_materials_inventory')}</h1>
                 <div className="flex items-center space-x-2 mt-1">
                   <Calendar className="w-4 h-4 text-green-100" />
                 <span className="text-green-100 text-sm">{t('last_updated')}: {lastUpdated || 'Loading...'}</span>
@@ -380,22 +380,22 @@ const InventoryManagement: React.FC = () => {
             <div className="flex items-center space-x-4">
               <button 
                 onClick={() => openMaterialModal()}
-                className="bg-white text-green-600 px-4 py-2 rounded-lg hover:bg-green-50 transition-colors flex items-center space-x-2"
+                className="bg-white text-green-600 px-4 py-2 rounded-lg hover:bg-green-50 transition-colors flex items-center justify-center space-x-2 w-full sm:w-auto"
               >
                 <Plus className="w-4 h-4" />
                 <span>{t('add_material')}</span>
               </button>
-              <Package className="w-6 h-6 text-green-100" />
+              <Package className="w-6 h-6 text-green-100 hidden sm:block" />
             </div>
           </div>
         </div>
 
         {/* Section Tabs */}
         <div className="mb-4 border-b border-gray-200">
-          <nav className="flex space-x-6">
+          <nav className="flex space-x-4 sm:space-x-6 overflow-x-auto">
             <button
               onClick={() => setActiveSection('inventory')}
-              className={`pb-2 text-sm font-medium ${
+              className={`pb-2 text-sm font-medium whitespace-nowrap ${
                 activeSection === 'inventory'
                   ? 'text-green-600 border-b-2 border-green-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -405,7 +405,7 @@ const InventoryManagement: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveSection('transactions')}
-              className={`pb-2 text-sm font-medium ${
+              className={`pb-2 text-sm font-medium whitespace-nowrap ${
                 activeSection === 'transactions'
                   ? 'text-green-600 border-b-2 border-green-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -419,25 +419,25 @@ const InventoryManagement: React.FC = () => {
         {activeSection === 'inventory' && (
         <>
         {/* Search and Filter */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4">
-            <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="relative w-full sm:w-auto">
               <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder={t('search_materials')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent w-64"
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent w-full sm:w-64"
               />
             </div>
-            <button className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <button className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors w-full sm:w-auto">
               <Filter className="w-4 h-4" />
               <span>{t('filter')}</span>
               <ChevronDown className="w-4 h-4" />
             </button>
           </div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-gray-600 text-center sm:text-right">
             {t('total_materials')}: {loading ? '-' : filteredMaterials.length}
           </div>
         </div>
@@ -445,14 +445,14 @@ const InventoryManagement: React.FC = () => {
         {/* Error Message */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="flex items-center space-x-2">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
                 <p className="text-red-800">{error}</p>
               </div>
               <button 
                 onClick={loadMaterials}
-                className="text-red-600 hover:text-red-800 text-sm underline"
+                className="text-red-600 hover:text-red-800 text-sm underline self-start sm:self-auto"
               >
                 Retry
               </button>
@@ -463,28 +463,28 @@ const InventoryManagement: React.FC = () => {
         {/* Inventory Table */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[700px]">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('material_name')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('category')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('current_stock')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('unit')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('min_stock')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('add_quantity')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('actions')}
                   </th>
                 </tr>
@@ -510,21 +510,21 @@ const InventoryManagement: React.FC = () => {
                 ) : (
                   filteredMaterials.map((material) => (
                     <tr key={material.material_id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-4">
                         <div className="flex items-center">
-                          <span className="text-2xl mr-3">{getMaterialIcon(material.category)}</span>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{material.material_name}</div>
-                            <div className="text-sm text-gray-500">{material.description || 'No description'}</div>
+                          <span className="text-xl sm:text-2xl mr-2 sm:mr-3">{getMaterialIcon(material.category)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-gray-900 truncate">{material.material_name}</div>
+                            <div className="text-sm text-gray-500 truncate">{material.description || 'No description'}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-4">
                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getCategoryColor(material.category)}`}>
                           {material.category}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-4">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
                             {material.current_stock.toLocaleString()}
@@ -536,13 +536,13 @@ const InventoryManagement: React.FC = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
                         {material.unit}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
                         {material.min_stock}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 sm:px-6 py-4">
                         <button 
                           onClick={() => openQuantityModal(material)}
                           className="bg-green-600 text-white p-2 rounded hover:bg-green-700 transition-colors"
@@ -551,7 +551,7 @@ const InventoryManagement: React.FC = () => {
                           <Plus className="w-4 h-4" />
                         </button>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-3 sm:px-6 py-4 text-sm font-medium">
                         <div className="flex space-x-2">
                           <button 
                             onClick={() => openMaterialModal(material)}
@@ -582,9 +582,9 @@ const InventoryManagement: React.FC = () => {
         {activeSection === 'transactions' && (
         <>
         {/* Stock Trend Chart */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Stock Movement Trend</h2>
-          <div className="h-80">
+          <div className="h-64 sm:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stockTrendData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -619,8 +619,8 @@ const InventoryManagement: React.FC = () => {
         </div>
 
         {/* Transaction Analytics */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">Transaction Volume</h2>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -645,7 +645,7 @@ const InventoryManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">Transaction Types</h2>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -672,7 +672,7 @@ const InventoryManagement: React.FC = () => {
         </div>
 
         {/* Material Usage Chart */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Top Materials by Usage</h2>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -692,7 +692,7 @@ const InventoryManagement: React.FC = () => {
 
         {/* Transactions Report Section */}
         <div className="bg-white border border-gray-200 rounded-lg">
-          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="p-4 sm:p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <h2 className="text-lg font-semibold text-gray-900">Stock Transactions Report</h2>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <FileText className="w-4 h-4" />
@@ -700,35 +700,35 @@ const InventoryManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {/* Filters */}
             <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Date Range:</label>
-                  <div className="flex items-center space-x-2">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                  <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Date Range:</label>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2">
                     <input
                       type="date"
                       value={txDateFrom}
                       onChange={(e) => setTxDateFrom(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
-                    <span className="text-gray-500">to</span>
+                    <span className="text-gray-500 text-center sm:text-left">to</span>
                     <input
                       type="date"
                       value={txDateTo}
                       onChange={(e) => setTxDateTo(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm font-medium text-gray-700">Type:</label>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full sm:w-auto">
+                  <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Type:</label>
                   <select
                     value={txType}
                     onChange={(e) => setTxType(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
                     <option>All</option>
                     <option value="ADD">ADD</option>
@@ -737,10 +737,10 @@ const InventoryManagement: React.FC = () => {
                   </select>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 w-full sm:w-auto">
                   <button
                     onClick={loadTransactions}
-                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors w-full sm:w-auto"
                   >
                     <Filter className="w-4 h-4" />
                     <span>Apply</span>
@@ -751,13 +751,13 @@ const InventoryManagement: React.FC = () => {
 
             {/* Table */}
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[500px]">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Material</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -781,14 +781,14 @@ const InventoryManagement: React.FC = () => {
                   ) : (
                     transactions.map((t, idx) => (
                       <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{t.material_name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{new Date(t.created_at).toLocaleString()}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">{t.material_name}</td>
+                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">{new Date(t.created_at).toLocaleString()}</td>
+                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-900">
                           <span className={t.transaction_type === 'ADD' ? 'text-green-700' : t.transaction_type === 'SUBTRACT' ? 'text-red-700' : 'text-gray-700'}>
                             {t.transaction_type === 'SUBTRACT' ? '-' : '+'}{parseFloat(t.quantity).toLocaleString()} {t.unit}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{t.reason || '-'}</td>
+                        <td className="px-3 sm:px-6 py-4 text-sm text-gray-600">{t.reason || '-'}</td>
                       </tr>
                     ))
                   )}

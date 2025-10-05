@@ -14,6 +14,7 @@ interface Product {
   name: string;
   standard_size: string;
   base_price: string | number; // Can come as string from API or number
+  stock_quantity?: number;
 }
 
 interface MaterialRequirement {
@@ -222,6 +223,20 @@ const CustomersOrders: React.FC = () => {
     if (!currentCustomer || validProducts.length === 0 || !orderForm.deliveryDate) {
       setError('Please fill in customer, at least one product with quantity, and delivery date');
       return;
+    }
+
+    // Check product stock for products that ARE ordered from stock
+    for (const prod of validProducts) {
+      if (prod.order_from_stock) {
+        const selectedProduct = products.find(p => p.product_id.toString() === prod.product);
+        const requestedQuantity = parseInt(prod.quantity);
+        const availableStock = selectedProduct?.stock_quantity || 0;
+        
+        if (requestedQuantity > availableStock) {
+          setError(`Insufficient product stock for ${selectedProduct?.name}: Requested ${requestedQuantity}, but only have ${availableStock} in stock`);
+          return;
+        }
+      }
     }
 
     try {
@@ -546,6 +561,19 @@ const CustomersOrders: React.FC = () => {
                           onChange={(e) => handleProductFieldChange(index, 'quantity', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+                {productItem.order_from_stock && productItem.product && productItem.quantity && (() => {
+                  const selectedProduct = products.find(p => p.product_id.toString() === productItem.product);
+                  const requestedQuantity = parseInt(productItem.quantity);
+                  const availableStock = selectedProduct?.stock_quantity || 0;
+                  const isInsufficient = requestedQuantity > availableStock;
+                  
+                  return isInsufficient ? (
+                    <div className="mt-1 text-sm text-red-600 flex items-center">
+                      <span className="mr-1">⚠️</span>
+                      <span>Insufficient product stock. Available: {availableStock}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-2">Unit Price:</label>
