@@ -222,7 +222,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </button>
           <div>
             <h2 className="text-xl md:text-2xl font-semibold text-gray-900">{t('dashboard')}</h2>
-            <p className="text-sm md:text-base text-gray-600">{t('welcome_back')}</p>
           </div>
         </div>
         
