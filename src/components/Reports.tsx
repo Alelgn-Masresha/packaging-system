@@ -60,6 +60,25 @@ interface Product {
   base_price: string | number;
 }
 
+// Custom hook for responsive sizing
+const useResponsiveSize = () => {
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+
+  useEffect(() => {
+    const checkSize = () => {
+      setIsMobile(window.innerWidth < 640);
+      setIsTablet(window.innerWidth >= 640 && window.innerWidth < 1024);
+    };
+
+    checkSize();
+    window.addEventListener('resize', checkSize);
+    return () => window.removeEventListener('resize', checkSize);
+  }, []);
+
+  return { isMobile, isTablet };
+};
+
 const Reports: React.FC = () => {
   // Set default date range to current month
   const currentDate = new Date();
@@ -70,6 +89,9 @@ const Reports: React.FC = () => {
   const [dateTo, setDateTo] = useState(lastDay.toISOString().split('T')[0]);
   const [productType, setProductType] = useState('All');
   const [quickFilter, setQuickFilter] = useState('Monthly');
+  
+  // Responsive sizing
+  const { isMobile, isTablet } = useResponsiveSize();
   
   // Section tabs
   const [activeSection, setActiveSection] = useState<'summary' | 'individual'>('summary');
@@ -635,18 +657,31 @@ const Reports: React.FC = () => {
             {/* Sales Trend Chart */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('sales_trend')}</h2>
-              <div className="h-64 sm:h-80">
+              <div className="h-64 sm:h-80 lg:h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={salesTrendData}>
+                  <AreaChart data={salesTrendData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 12 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => value.toLocaleString()}
+                    />
                     <Tooltip 
                       formatter={(value: any, name: string) => [
                         name === 'sales' ? formatCurrency(value) : value,
                         name === 'sales' ? 'Sales' : 'Orders'
                       ]}
                       labelFormatter={(label) => `Date: ${label}`}
+                      contentStyle={{
+                        fontSize: '14px',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #e5e7eb'
+                      }}
                     />
                     <Area 
                       type="monotone" 
@@ -654,6 +689,7 @@ const Reports: React.FC = () => {
                       stroke="#3B82F6" 
                       fill="#3B82F6" 
                       fillOpacity={0.3}
+                      strokeWidth={2}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -661,17 +697,34 @@ const Reports: React.FC = () => {
             </div>
 
             {/* Product Sales Chart (Top 5 over time as grouped bars) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 mb-6">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('top_products_time')}</h2>
-                <div className="h-64">
+                <div className="h-64 sm:h-80 xl:h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topProductSeriesData}>
+                    <BarChart data={topProductSeriesData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip formatter={(value: any, name: string) => [formatCurrency(value as number), name]} />
-                      <Legend />
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fontSize: 12 }}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis 
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => value.toLocaleString()}
+                      />
+                      <Tooltip 
+                        formatter={(value: any, name: string) => [formatCurrency(value as number), name]} 
+                        contentStyle={{
+                          fontSize: '14px',
+                          padding: '8px',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb'
+                        }}
+                      />
+                      <Legend 
+                        wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
+                      />
                       {topProductKeys.map((key, idx) => (
                         <Bar key={key} dataKey={key} fill={["#3B82F6", "#F59E0B", "#8B5CF6", "#10B981", "#EF4444"][idx % 5]} />
                       ))}
@@ -682,24 +735,32 @@ const Reports: React.FC = () => {
 
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('order_status_distribution')}</h2>
-                <div className="h-64">
+                <div className="h-64 sm:h-80 xl:h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                       <Pie
                         data={statusDistributionData}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
                         label={({ status, percentage }) => `${status === 'Completed' ? t('status_completed') : status === 'Delivered' ? t('status_delivered') : status === 'In Progress' ? t('status_in_progress') : status === 'Pending' ? t('status_pending') : status === 'Cancelled' ? t('status_cancelled') : status} (${percentage}%)`}
-                        outerRadius={80}
+                        outerRadius={isMobile ? 60 : isTablet ? 70 : 80}
                         fill="#8884d8"
                         dataKey="count"
+                        labelStyle={{ fontSize: '12px' }}
                       >
                         {statusDistributionData.map((_, index) => (
                           <Cell key={`cell-${index}`} fill={['#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#8B5CF6'][index % 5]} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip 
+                        contentStyle={{
+                          fontSize: '14px',
+                          padding: '8px',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb'
+                        }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -832,15 +893,28 @@ const Reports: React.FC = () => {
             {/* Order Volume Chart */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">Order Volume Trend</h2>
-              <div className="h-64 sm:h-80">
+              <div className="h-64 sm:h-80 lg:h-96">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={orderVolumeData}>
+                  <LineChart data={orderVolumeData} margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 12 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => value.toLocaleString()}
+                    />
                     <Tooltip 
                       formatter={(value: any) => [value, 'Orders']}
                       labelFormatter={(label) => `Date: ${label}`}
+                      contentStyle={{
+                        fontSize: '14px',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid #e5e7eb'
+                      }}
                     />
                     <Line 
                       type="monotone" 
